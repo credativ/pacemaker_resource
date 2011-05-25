@@ -33,14 +33,14 @@ OCF_ROOT=/usr/lib/ocf
 ## Internal resource parameters
 ##
 
-PIDFILE="${OCF_RESKEY_pgpidfile}"
+PIDFILE="$OCF_RESKEY_pgpidfile"
 BACKUPLABEL="${OCF_RESKEY_pgdata}/backup_label"
 ATTRD_UPDATER="${HA_SBIN_DIR}/attrd_updater -q -d 0"
 PGREPMGR_STATUS_NAME="pgrepmgr-status"
 CLONE_LOCK="${OCF_RESKEY_tmpdir}/PGSQL.${OCF_RESKEY_primary_host}.${OCF_RESKEY_primary_port}.clone"
 RESOURCE="$(basename $0)"
 
-PSQLCMD="/usr/bin/psql -v ON_ERROR_STOP=1 -U $OCF_RESKEY_resowner -d $OCF_RESKEY_resowner -qXtnA"
+PSQLCMD="$OCF_RESKEY_psqlbin -v ON_ERROR_STOP=1 -U $OCF_RESKEY_resowner -d $OCF_RESKEY_resowner -qXtnA"
 if [[ ! -z $OCF_RESKEY_primary_port ]]; then
     PSQLCMD="$PSQLCMD -p $OCF_RESKEY_primary_port -c"
 else
@@ -272,7 +272,7 @@ pgrepmgr_stop() {
 }
 
 pgrepmgr_status() {
-    ocf_log info "pid file in ${PIDFILE}"
+    ocf_log info "pid file in $PIDFILE"
     if [ -f $PIDFILE ]
     then
         PID=`head -n 1 $PIDFILE`
@@ -450,7 +450,7 @@ pgrepmgr_demote() {
 
 		## Wait
 		count=0
-		while [ $count -lt $OCF_RESKEY_stop_escalate ]
+	while [ $count -lt $OCF_RESKEY_stop_escalate ]
 		do
 
 		    if ! pgrepmgr_status; then

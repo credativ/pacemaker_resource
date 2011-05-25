@@ -1,3 +1,6 @@
+#!/bin/bash
+set -e
+
 export OCF_RESKEY_pgdata=$PGDATA
 
 if [[ -z "$OCF_RESKEY_pgdata" ]]; then
