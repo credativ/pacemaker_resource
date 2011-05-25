@@ -235,7 +235,7 @@ EOF
 pgrepmgr_start() {
 
     if [[ pgrepmgr_status -eq $OCF_NOT_RUNNING ]]; then
-	$OCF_RESKEY_pgctl -D ${OCF_RESKEY_pgdata} start
+	runasowner $OCF_RESKEY_pgctl -D ${OCF_RESKEY_pgdata} start
     fi
 
     return $?
@@ -248,7 +248,7 @@ pgrepmgr_stop() {
     ## repmgrd
 
     if [[ pgrepmgr_status -eq $OCF_SUCCESS ]]; then
-	$OCF_RESKEY_pgctl -D ${OCF_RESKEY_pgdata} -m fast stop
+	runasowner $OCF_RESKEY_pgctl -D ${OCF_RESKEY_pgdata} -m fast stop
     fi
 
     return $?
