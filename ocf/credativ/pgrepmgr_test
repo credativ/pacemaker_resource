@@ -234,8 +234,12 @@ EOF
 
 pgrepmgr_start() {
 
-    if [[ pgrepmgr_status -eq $OCF_NOT_RUNNING ]]; then
-	runasowner $OCF_RESKEY_pgctl -D ${OCF_RESKEY_pgdata} start
+    pgrepmgr_status
+
+    if [[ $? -eq $OCF_NOT_RUNNING ]]; then
+	ocf_log info "starting PostgreSQL instance"
+	ocf_log info "${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} start"
+	runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} start
     fi
 
     return $?
@@ -244,11 +248,14 @@ pgrepmgr_start() {
 
 pgrepmgr_stop() {
 
-    ## If the current node is a standby, shut down
+    ## TODO: If the current node is a standby, shut down
     ## repmgrd
+    pgrepmgr_status
 
-    if [[ pgrepmgr_status -eq $OCF_SUCCESS ]]; then
-	runasowner $OCF_RESKEY_pgctl -D ${OCF_RESKEY_pgdata} -m fast stop
+    if [[ $? -eq $OCF_SUCCESS ]]; then
+	ocf_log info "stopping PostgreSQL instance"
+	ocf_log info "${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -m fast stop"
+	runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -m fast stop
     fi
 
     return $?
@@ -256,15 +263,16 @@ pgrepmgr_stop() {
 }
 
 pgrepmgr_status() {
-     if [ -f $PIDFILE ]
-     then
-         PID=`head -n 1 $PIDFILE`
-         kill -0 $PID >/dev/null 2>&1 && fuser $OCF_RESKEY_pgdata 2>&1 | grep $PID >/dev/null 2>&1
-         return $?
-     fi
-
+    ocf_log info "pid file in ${PIDFILE}"
+    if [ -f $PIDFILE ]
+    then
+        PID=`head -n 1 $PIDFILE`
+        kill -0 $PID >/dev/null 2>&1 && fuser $OCF_RESKEY_pgdata 2>&1 | grep $PID >/dev/null 2>&1
+        return $?
+    fi
+    
      # No PID file
-     return $OCF_NOT_RUNNING
+    return $OCF_NOT_RUNNING
 }
 
 ##
