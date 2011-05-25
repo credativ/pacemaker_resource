@@ -242,8 +242,8 @@ pgrepmgr_start() {
     pgrepmgr_status
 
     if [[ $? -eq $OCF_NOT_RUNNING ]]; then
-	ocf_log info "starting PostgreSQL instance"
-	ocf_log info "${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} start"
+	ocf_log info "START: starting PostgreSQL instance"
+	ocf_log info "START: ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} start"
 	runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} start
     fi
 
@@ -509,11 +509,12 @@ pgrepmgr_demote() {
 	local FIN_RC=$OCF_ERR_GENERIC
 
         ## Clone the current master
-	${OCF_RESKEY_repmgrbindir}/repmgr \
+	runasowner ${OCF_RESKEY_repmgrbindir}/repmgr \
 	    -U${OCF_RESKEY_primary_user} \
 	    -d${OCF_RESKEY_primary_db} \
 	    -p${OCF_RESKEY_primary_port} \
 	    -D${OCF_RESKEY_pgdata} \
+	    -R${OCF_RESKEY_resowner} \
 	    standby clone ${OCF_RESKEY_primary_host}
 
 	RC=$?

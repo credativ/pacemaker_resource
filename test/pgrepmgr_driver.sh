@@ -13,7 +13,7 @@ export OCF_RESKEY_primary_host=192.168.0.60
 export OCF_RESKEY_primary_port=$PGPORT
 export OCF_RESKEY_primary_user=repmgr
 
-export OCF_RESKEY_resowner=$USER
+export OCF_RESKEY_resowner=bhe
 export OCF_RESKEY_rsync_user=$OCF_RESKEY_resowner
 
 export OCF_RESKEY_wal_keep_segments=128
