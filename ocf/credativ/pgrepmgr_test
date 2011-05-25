@@ -234,7 +234,11 @@ EOF
 
 pgrepmgr_start() {
 
-    return pgrepmgr_status
+    if [[ pgrepmgr_status -eq $OCF_NOT_RUNNING ]]; then
+	$OCF_RESKEY_pgctl -D ${OCF_RESKEY_pgdata} start
+    fi
+
+    return $?
 
 }
 
@@ -243,7 +247,11 @@ pgrepmgr_stop() {
     ## If the current node is a standby, shut down
     ## repmgrd
 
-    return $OCF_SUCCESS
+    if [[ pgrepmgr_status -eq $OCF_SUCCESS ]]; then
+	$OCF_RESKEY_pgctl -D ${OCF_RESKEY_pgdata} -m fast stop
+    fi
+
+    return $?
 
 }
 
