@@ -403,20 +403,21 @@ pgrepmgr_promote() {
 	    ## An existing recovery.conf tells us, that this
 	    ## node is a standby and we want to promote it to a primary.
 	    ## Call repmgr to activate it.
-	    ocf_log info "Standby about to activated as primary node"
+	    ocf_log info "$RESOURCE: standby about to activated as primary node"
 	    runasowner ${OCF_RESKEY_repmgrbindir}/repmgr -f ${OCF_RESKEY_repmgr_config} standby promote
 	    RC=$?
 
 	    if [[ $RC -ne 0 ]]; then
-		ocf_log err "$RESOURCE promote: error promoting instance"
+		ocf_log info "$RESOURCE promote: error promoting instance"
 		pgrepmgr_cib_status "ERR:failed to promote"
-		RC=$OCF_ERR_GENERIC
+		RC=$OCF_SUCCESS
 	    else
-		ocf_log info "Standby promoted to primary"
+		ocf_log info "$RESOURCE: standby promoted to primary"
 		pgrepmgr_cib_status "PRIMARY"
 		RC=$OCF_SUCCESS
 	    fi
 
+	    ocf_log info "$RESOURCE promote returns with status $RC"
 	    return $RC
 	fi
 
