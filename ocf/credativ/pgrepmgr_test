@@ -242,6 +242,7 @@ EOF
 
 pgrepmgr_start() {
 
+    ocf_log info "$RESOURCE:START"
     pgrepmgr_status
 
     if [[ $? -eq $OCF_NOT_RUNNING ]]; then
@@ -325,7 +326,9 @@ pgrepmgr_monitor() {
 	return $OCF_SUCCESS
     fi
     
-    if ! pgrepmgr_status; then
+    pgrepmgr_status
+
+    if [[ $? -ne 0 ]]; then
 	ocf_log warn "$RESOURCE monitor: PostgreSQL not running"
 	pgrepmgr_cib_status "STOP:not running"
 	return $OCF_NOT_RUNNING
@@ -414,10 +417,10 @@ pgrepmgr_demote() {
     ## Check wether this node is a primary instance
     pgrepmgr_get_replication_status
 
-    if [[ $? -eq $PGREPMGR_STATUS_IS_HOT_STANDBY ]]; then
+    if [[ $? -eq $PGREPMGR_STATUS_IS_PRIMARY ]]; then
 
-	ocf_log info "Instance is a standby already"
-	pgrepmgr_cib_status "START:instance is standby"
+	ocf_log info "Instance is a primary"
+	pgrepmgr_cib_status "START:refused to demote primary"
 	return $OCF_SUCCESS
 
     else
@@ -425,8 +428,8 @@ pgrepmgr_demote() {
 	## OK, now comes the tricky part. This is a primary instance, and we want to
 	## demote it to a standby. This requires us to build the standby from scratch.
 	## Since this could be a long operation, we need to take care.
-	if ! touch "$CLONE_LOCK" ; then
-	    ocf_log err "Could not create file \"${CLONE_LOCK}\""
+	if ! touch "$CLONE_LOCK"; then
+	    ocf_log info "Could not create file \"${CLONE_LOCK}\""
 	    return $OCF_ERR_GENERIC
 	fi
 
@@ -464,7 +467,7 @@ pgrepmgr_demote() {
 	    if pgrepmgr_status ; then
 		## hmm okay, something really weird is going on,
 		## exit immediately
-		ocf_log err "An fatal error occured: instance is not shutting down"
+		ocf_log info "An fatal error occured: instance is not shutting down"
 		pgrepmgr_cib_status "ERROR:instance not shutting down"
 		rm -f $CLONE_LOCK
 		return $OCF_ERR_GENERIC
@@ -487,7 +490,7 @@ pgrepmgr_demote() {
 	    ## TODO: Much more checks here...
 
 	    if ! rm -rf "${OCF_RESKEY_pgdata}"; then
-		ocf_log err "Could not delete cluster directory \"${OCF_RESKEY_pgdata}\""
+		ocf_log info "Could not delete cluster directory \"${OCF_RESKEY_pgdata}\""
 		rm -f $CLONE_LOCK
 		return $OCF_ERR_GENERIC
 	    fi
@@ -514,19 +517,19 @@ pgrepmgr_demote() {
 
 	    case $RC in
 		1) 
-		    ocf_log err "$RESOURCE demote: bad repmgr config"
+		    ocf_log info "$RESOURCE demote: bad repmgr config"
 		    ;;
 		2)
-		    ocf_log err "$RESOURCE demote: rsync error"
+		    ocf_log info "$RESOURCE demote: rsync error"
 		    ;;
 		3)
-		    ocf_log err "$RESOURCE demote: pg_stop_backup() failed"
+		    ocf_log info "$RESOURCE demote: pg_stop_backup() failed"
 		    ;;
 		5)
-		    ocf_log err "$RESOURCE demote: needs xlog"
+		    ocf_log info "$RESOURCE demote: needs xlog"
 		    ;;
 		*)
-		    ocf_log err "$RESOURCE demote: failed to clone standby"
+		    ocf_log info "$RESOURCE demote: failed to clone standby"
 		    ;;
 	    esac
 
@@ -610,7 +613,7 @@ US=`id -u -n`
 
 if [ $US != root -a $US != "$OCF_RESKEY_resowner" ]
 then
-    ocf_log err "$0 must be run as root or $OCF_RESKEY_resowner"
+    ocf_log info "$0 must be run as root or $OCF_RESKEY_resowner"
     exit $OCF_ERR_GENERIC
 fi
 
