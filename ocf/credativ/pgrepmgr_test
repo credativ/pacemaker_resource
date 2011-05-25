@@ -33,7 +33,7 @@ OCF_ROOT=/usr/lib/ocf
 ## Internal resource parameters
 ##
 
-PIDFILE="${OCF_RESKEY_pgdata}/postmaster.pid"
+PIDFILE="${OCF_RESKEY_pgpidfile}"
 BACKUPLABEL="${OCF_RESKEY_pgdata}/backup_label"
 ATTRD_UPDATER="${HA_SBIN_DIR}/attrd_updater -q -d 0"
 PGREPMGR_STATUS_NAME="pgrepmgr-status"
