@@ -38,11 +38,13 @@ BACKUPLABEL="${OCF_RESKEY_pgdata}/backup_label"
 ATTRD_UPDATER="${HA_SBIN_DIR}/attrd_updater -q -d 0"
 PGREPMGR_STATUS_NAME="pgrepmgr-status"
 CLONE_LOCK="${OCF_RESKEY_tmpdir}/PGSQL.${OCF_RESKEY_primary_host}.${OCF_RESKEY_primary_port}.clone"
-PSQLCMD="/usr/bin/psql -v ON_ERROR_STOP=1 -qXtnAc"
 RESOURCE="$(basename $0)"
 
+PSQLCMD="/usr/bin/psql -v ON_ERROR_STOP=1 -U $OCF_RESKEY_resowner -d $OCF_RESKEY_resowner -qXtnA"
 if [[ ! -z $OCF_RESKEY_primary_port ]]; then
-    PSQLCMD="$PSQLCMD -p $OCF_RESKEY_primary_port"
+    PSQLCMD="$PSQLCMD -p $OCF_RESKEY_primary_port -c"
+else
+    PSQLCMD="$PSQLCMD -c"
 fi
 
 if [[ -z "${OCF_RESKEY_resowner}" ]]; then
@@ -287,7 +289,7 @@ pgrepmgr_status() {
 ##
 pgrepmgr_get_replication_status() {
 
-    STATUS=$(runasowner "$PSQLCMD -U $OCF_RESKEY_resowner -c 'SELECT pg_is_in_recovery();' $OCF_RESKEY_resowner")
+    STATUS=$(runasowner "$PSQLCMD 'SELECT pg_is_in_recovery();'")
 
     ## if psql didn't succeed, we need to check wether the instance is
     ## actually running..
