@@ -313,71 +313,51 @@ pgrepmgr_get_replication_status() {
 ## PostgreSQL instance, make sure it is running
 pgrepmgr_monitor() {
 
-    ## We need to be careful with monitor probes against this resource.
-    ## If this is an OCF probe, we simplify this test by just checking
-    ## wether a PostgreSQL instance is running, but only when no CLONE_LOCK
-    ## has been found.
+    ocf_log info "$RESOURCE monitor"
 
-    if ocf_is_probe; then
-
-	## check wether any action is in progress
-	ocf_log info "OCF probe"
-
-	## CLONE_LOCK exists? If true, exit.
-	if [[ -f ${CLONE_LOCK} ]]; then
-	    return $OCF_SUCCESS
-	fi
-
-	if ! pgrepmgr_status; then
-	    ocf_log warn "$RESOURCE monitor: PostgreSQL not running"
-	    pgrepmgr_cib_status "STOP:not running"
-	    return $OCF_NOT_RUNNING
-	fi
-
-    else
-	
-	ocf_log info "$RESOURCE monitor: no OCF probe"
-
-	## While this RA is running it might occur that syncing during
-	## a demote phase could have a very long duration. Check for a
-	## in-progress clone phase.
-	if [ -f $CLONE_LOCK ]; then
-	    $ATTRD_UPDATER -n $PGREPMGR_STATUS_NAME -v "STOP:waiting for promote"
-	    return $OCF_SUCCESS
-	fi
-
-	if ! pgrepmgr_status; then
-	    ocf_log warn "$RESOURCE monitor: PostgreSQL not running"
-	    pgrepmgr_cib_status "STOP:not running"
-	    return $OCF_NOT_RUNNING
-	fi
-
-	ocf_log info "$RESOURCE monitor: PostgreSQL running"
-
-	##
-	## Not CLONE_LOCK file found, what role is this resource
-	## currently in?
-	##
-	pgrepmgr_get_replication_status
-	case $? in
-	    $PGREPMGR_STATUS_IS_HOT_STANDBY)
-		pgrepmgr_cib_status "HOT STANDBY"
-		ocf_log info "$RESOURCE monitor: instance is HOT STANDBY"
-		## falls through to end of function
-		;;
-	    $PGREPMGR_STATUS_IS_PRIMARY)
-		pgrepmgr_status "PRIMARY"
-		ocf_log info "$RESOURCE monitor: instance is PRIMARY"
-		return $OCF_RUNNING_MASTER
-		;;
-	    *)
-		## oops
-		pgrepmgr_cib_status "STOP:unknown state"
-		ocf_log info "$RESOURCE monitor: unknown state $*"
-		return $OCF_ERR_GENERIC
-	esac
-
+    ## While this RA is running it might occur that syncing during
+    ## a demote phase could have a very long duration. Check for a
+    ## in-progress clone phase.
+    if [ -f $CLONE_LOCK ]; then
+	$ATTRD_UPDATER -n $PGREPMGR_STATUS_NAME -v "STOP:waiting for promote"
+	return $OCF_SUCCESS
     fi
+    
+    if ! pgrepmgr_status; then
+	ocf_log warn "$RESOURCE monitor: PostgreSQL not running"
+	pgrepmgr_cib_status "STOP:not running"
+	return $OCF_NOT_RUNNING
+    fi
+    
+    ocf_log info "$RESOURCE monitor: PostgreSQL running"
+    
+    ##
+    ## Not CLONE_LOCK file found, what role is this resource
+    ## currently in?
+    ##
+    pgrepmgr_get_replication_status
+ 
+    case $? in
+	
+	$PGREPMGR_STATUS_IS_HOT_STANDBY)
+           pgrepmgr_cib_status "HOT STANDBY"
+	   ocf_log info "$RESOURCE monitor: instance is HOT STANDBY"
+	   ## falls through to end of function
+	   ;;
+	
+	$PGREPMGR_STATUS_IS_PRIMARY)
+	   pgrepmgr_status "PRIMARY"
+	   ocf_log info "$RESOURCE monitor: instance is PRIMARY"
+	   return $OCF_RUNNING_MASTER
+	   ;;
+	 *)
+	 
+	  ## oops
+	   pgrepmgr_cib_status "STOP:unknown state"
+	   ocf_log info "$RESOURCE monitor: unknown state $*"
+	   return $OCF_ERR_GENERIC
+    
+    esac
 
     return $OCF_SUCCESS
 }
