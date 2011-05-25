@@ -363,10 +363,12 @@ pgrepmgr_monitor() {
 	    $PGREPMGR_STATUS_IS_HOT_STANDBY)
 		pgrepmgr_cib_status "HOT STANDBY"
 		ocf_log info "$RESOURCE monitor: instance is HOT STANDBY"
+		## falls through to end of function
 		;;
 	    $PGREPMGR_STATUS_IS_PRIMARY)
 		pgrepmgr_status "PRIMARY"
 		ocf_log info "$RESOURCE monitor: instance is PRIMARY"
+		return $OCF_RUNNING_MASTER
 		;;
 	    *)
 		## oops
