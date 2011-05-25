@@ -412,7 +412,7 @@ pgrepmgr_promote() {
 pgrepmgr_demote() {
 
     ## Check wether this node is a primary instance
-    if pgrepmgr_get_replication_status -eq $PGREPMGR_STATUS_HOT_STANDBY ; then
+    if pgrepmgr_get_replication_status -eq $PGREPMGR_STATUS_IS_HOT_STANDBY ; then
 
 	ocf_log info "Instance is a standby already"
 	pgrepmgr_cib_status "START:instance is standby"
