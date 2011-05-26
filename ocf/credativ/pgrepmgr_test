@@ -288,7 +288,8 @@ pgrepmgr_status() {
     if [ -f $PIDFILE ]
     then
         PID=`head -n 1 $PIDFILE`
-        kill -0 $PID >/dev/null 2>&1 && fuser $OCF_RESKEY_pgdata 2>&1 | grep $PID >/dev/null 2>&1
+        # kill -0 $PID >/dev/null 2>&1 && fuser $OCF_RESKEY_pgdata 2>&1 | grep $PID >/dev/null 2>&1
+	runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -m fast status
         RC=$?
     fi
     
