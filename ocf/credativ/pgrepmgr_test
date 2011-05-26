@@ -283,10 +283,6 @@ pgrepmgr_stop() {
 
 }
 
-pgrepmgr_controldata_status() {
-
-}
-
 pgrepmgr_status() {
     ocf_log info "pid file in $PIDFILE"
     if [ -f $PIDFILE ]
