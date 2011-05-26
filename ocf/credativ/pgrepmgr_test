@@ -371,7 +371,7 @@ pgrepmgr_monitor() {
 	    break;
 	fi
 
-	WAIT_CNT = $(expr $WAIT_CNT + 1)
+	WAIT_CNT=$(expr $WAIT_CNT + 1)
 
 	pgrepmgr_get_replication_status
 	REPLICATION_STATUS=$?
