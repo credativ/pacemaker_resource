@@ -386,7 +386,7 @@ pgrepmgr_monitor() {
 
     done
 
-    case REPLICATION_STATUS in
+    case $REPLICATION_STATUS in
 	
 	$PGREPMGR_STATUS_IS_HOT_STANDBY)
            pgrepmgr_cib_status "HOT STANDBY"
