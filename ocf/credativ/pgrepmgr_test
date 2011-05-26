@@ -290,6 +290,7 @@ pgrepmgr_status() {
 ##
 pgrepmgr_get_replication_status() {
 
+    ocf_log debug "$PSQLCMD 'SELCT pg_is_in_recovery();'"
     STATUS=$(runasowner "$PSQLCMD 'SELECT pg_is_in_recovery();'")
 
     ## if psql didn't succeed, we need to check wether the instance is
