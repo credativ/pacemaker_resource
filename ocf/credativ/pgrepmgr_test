@@ -290,7 +290,6 @@ pgrepmgr_status() {
 ##
 pgrepmgr_get_replication_status() {
 
-    ocf_log debug "$PSQLCMD 'SELCT pg_is_in_recovery();'"
     STATUS=$(runasowner "$PSQLCMD 'SELECT pg_is_in_recovery();'")
 
     ## if psql didn't succeed, we need to check wether the instance is
@@ -317,7 +316,11 @@ pgrepmgr_get_replication_status() {
 ## PostgreSQL instance, make sure it is running
 pgrepmgr_monitor() {
 
-    ocf_log info "$RESOURCE monitor"
+    if ocf_is_probe; then
+	ocf_log debug "$RESOURCE monitor PROBE"
+    else
+	ocf_log debug "$RESOURCE monitor"
+    fi
 
     ## While this RA is running it might occur that syncing during
     ## a demote phase could have a very long duration. Check for a
