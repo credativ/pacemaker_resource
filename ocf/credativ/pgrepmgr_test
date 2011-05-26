@@ -251,6 +251,18 @@ pgrepmgr_start() {
 	runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} start
     fi
 
+    while :
+    do
+        pgrepmgr_monitor
+        rc=$?
+        if [ $rc -eq 0 ]; then
+            break;
+        fi 
+        sleep 1
+	ocf_log debug "PostgreSQL still hasn't started yet. Waiting..."
+    done
+    ocf_log info "PostgreSQL is started."
+
     return $?
 
 }
@@ -271,13 +283,17 @@ pgrepmgr_stop() {
 
 }
 
+pgrepmgr_controldata_status() {
+
+}
+
 pgrepmgr_status() {
     ocf_log info "pid file in $PIDFILE"
     if [ -f $PIDFILE ]
     then
         PID=`head -n 1 $PIDFILE`
         kill -0 $PID >/dev/null 2>&1 && fuser $OCF_RESKEY_pgdata 2>&1 | grep $PID >/dev/null 2>&1
-        return $?
+        RC=$?
     fi
     
      # No PID file
@@ -510,6 +526,7 @@ pgrepmgr_demote() {
 	    -p${OCF_RESKEY_primary_port} \
 	    -D${OCF_RESKEY_pgdata} \
 	    -R${OCF_RESKEY_resowner} \
+	    -w${OCF_RESKEY_wal_keep_segments} \
 	    standby clone ${OCF_RESKEY_primary_host}
 
 	RC=$?
