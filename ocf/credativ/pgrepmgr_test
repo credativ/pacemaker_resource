@@ -369,7 +369,7 @@ pgrepmgr_monitor() {
 	REPLICATION_STATUS=$?
 
 	if [[ $REPLICATION_STATUS -eq $PGREPMGR_STATUS_IS_BAD_CONN ]]; then
-	    ocf_log debug "PostgreSQL doesn't accept connections yet, retry"
+	    ocf_log debug "PostgreSQL doesn't accept connections yet, retry..."
 	    sleep 1
 	else
 	    break
@@ -377,7 +377,7 @@ pgrepmgr_monitor() {
 
     done
 
-    case $? in
+    case REPLICATION_STATUS in
 	
 	$PGREPMGR_STATUS_IS_HOT_STANDBY)
            pgrepmgr_cib_status "HOT STANDBY"
@@ -388,7 +388,9 @@ pgrepmgr_monitor() {
 	$PGREPMGR_STATUS_IS_PRIMARY)
 	   pgrepmgr_status "PRIMARY"
 	   ocf_log info "$RESOURCE monitor: instance is PRIMARY"
-	   return $OCF_RUNNING_MASTER
+	   if ocf_is_probe; then
+	       return $OCF_RUNNING_MASTER
+	   fi
 	   ;;
 	 *)
 	 
