@@ -253,7 +253,7 @@ pgrepmgr_start() {
 
     while :
     do
-        runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} start
+        runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} status
         rc=$?
         if [ $rc -eq 0 ]; then
             break;
