@@ -253,7 +253,7 @@ pgrepmgr_start() {
 
     while :
     do
-        runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} status
+	pgrepmgr_status
         rc=$?
         if [ $rc -eq 0 ]; then
             break;
@@ -289,8 +289,9 @@ pgrepmgr_status() {
     then
         PID=`head -n 1 $PIDFILE`
         # kill -0 $PID >/dev/null 2>&1 && fuser $OCF_RESKEY_pgdata 2>&1 | grep $PID >/dev/null 2>&1
-	runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -m fast status
+	runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} status
         RC=$?
+	return $RC
     fi
     
      # No PID file
