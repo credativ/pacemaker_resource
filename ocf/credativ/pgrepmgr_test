@@ -330,6 +330,8 @@ pgrepmgr_get_replication_status() {
 ## PostgreSQL instance, make sure it is running
 pgrepmgr_monitor() {
 
+    local REPLICATION_STATUS
+
     if ocf_is_probe; then
 	ocf_log debug "$RESOURCE monitor PROBE"
     else
@@ -358,8 +360,23 @@ pgrepmgr_monitor() {
     ## Not CLONE_LOCK file found, what role is this resource
     ## currently in?
     ##
-    pgrepmgr_get_replication_status
- 
+
+    ## NOTE: PostgreSQL might be running but not yet 
+    ## accepting any connections, wait a little...
+    while :
+    do
+	pgrepmgr_get_replication_status
+	REPLICATION_STATUS=$?
+
+	if [[ $REPLICATION_STATUS -eq $PGREPMGR_STATUS_IS_BAD_CONN ]]; then
+	    ocf_log debug "PostgreSQL doesn't accept connections yet, retry"
+	    sleep 1
+	else
+	    break
+	fi
+
+    done
+
     case $? in
 	
 	$PGREPMGR_STATUS_IS_HOT_STANDBY)
