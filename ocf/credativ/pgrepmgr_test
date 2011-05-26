@@ -362,13 +362,22 @@ pgrepmgr_monitor() {
     ##
 
     ## NOTE: PostgreSQL might be running but not yet 
-    ## accepting any connections, wait a little...
+    ## accepting any connections, wait at least 20s
+    local WAIT_CNT=0
     while :
     do
+
+	if [[ $WAIT_CNT -eq $OCF_RESKEY_stop_escalate ]]; then
+	    break;
+	fi
+
+	WAIT_CNT = $(expr $WAIT_CNT + 1)
+
 	pgrepmgr_get_replication_status
 	REPLICATION_STATUS=$?
 
-	if [[ $REPLICATION_STATUS -eq $PGREPMGR_STATUS_IS_BAD_CONN ]]; then
+	if [[ $REPLICATION_STATUS -eq $PGREPMGR_STATUS_IS_BAD_CONN 
+		    || $REPLICATION_STATUS -eq $PGREPMGR_STATUS_IS_FATAL ]]; then
 	    ocf_log debug "PostgreSQL doesn't accept connections yet, retry..."
 	    sleep 1
 	else
@@ -487,7 +496,7 @@ pgrepmgr_demote() {
 
 		## Wait
 		count=0
-	while [ $count -lt $OCF_RESKEY_stop_escalate ]
+		while [ $count -lt $OCF_RESKEY_stop_escalate ]
 		do
 
 		    if ! pgrepmgr_status; then
