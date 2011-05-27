@@ -297,17 +297,15 @@ pgrepmgr_stop() {
 
 pgrepmgr_status() {
     ocf_log info "pid file in $PIDFILE"
-    if [ -f $PIDFILE ]
+    if [ ! -f $PIDFILE ]
     then
-        PID=`head -n 1 $PIDFILE`
-        # kill -0 $PID >/dev/null 2>&1 && fuser $OCF_RESKEY_pgdata 2>&1 | grep $PID >/dev/null 2>&1
-	runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} status
-        RC=$?
-	return $RC
+	ocf_log debug "$RESOURCE pidfile $PIDFILE doesn not exist"
+        # No PID file
+	return $OCF_NOT_RUNNING
     fi
     
-     # No PID file
-    return $OCF_NOT_RUNNING
+    runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} status
+    return $?
 }
 
 ##
