@@ -42,7 +42,7 @@ RESOURCE="$(basename $0)"
 
 ## override PATH
 ## this is a hack for repmgr, since it silently assumes to have pg_ctl in its PATH
-export PATH="$PATH":"$(dirname ${OCF_RESKEY_pgctl})":"$(dirname ${OCF_RESKEY_psqlbin})"
+PATH="$PATH":"$(dirname ${OCF_RESKEY_pgctl})":"$(dirname ${OCF_RESKEY_psqlbin})"
 
 PSQLCMD="$OCF_RESKEY_psqlbin -v ON_ERROR_STOP=1 -U $OCF_RESKEY_resowner -d $OCF_RESKEY_resowner -qXtnA"
 if [[ ! -z $OCF_RESKEY_primary_port ]]; then
@@ -657,7 +657,7 @@ pgrepmgr_notify() {
 
 pgrepmgr_do_standby_clone() {
 
-    runasowner ${OCF_RESKEY_repmgrbindir}/repmgr \
+    runasowner PATH=$PATH ${OCF_RESKEY_repmgrbindir}/repmgr \
 	-U${OCF_RESKEY_primary_user} \
 	-d${OCF_RESKEY_primary_db} \
 	-p${OCF_RESKEY_primary_port} \
