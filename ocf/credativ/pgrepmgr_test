@@ -42,7 +42,7 @@ RESOURCE="$(basename $0)"
 
 ## override PATH
 ## this is a hack for repmgr, since it silently assumes to have pg_ctl in its PATH
-PATH="$(dirname ${OCF_RESKEY_pgctl})":"$(dirname ${OCF_RESKEY_psqlbin})":"$PATH"
+export PATH="$PATH":"$(dirname ${OCF_RESKEY_pgctl})":"$(dirname ${OCF_RESKEY_psqlbin})"
 
 PSQLCMD="$OCF_RESKEY_psqlbin -v ON_ERROR_STOP=1 -U $OCF_RESKEY_resowner -d $OCF_RESKEY_resowner -qXtnA"
 if [[ ! -z $OCF_RESKEY_primary_port ]]; then
