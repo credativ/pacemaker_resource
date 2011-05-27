@@ -263,7 +263,7 @@ pgrepmgr_demote() {
 	fi
 
 	## First, shut the server down, if not already done
-	if [[ pgrepmgr_status ]]; then
+	if pgrepmgr_status ; then
 
 	    ocf_log debug "Shutting down PRIMARY"
 	    runasowner $OCF_RESKEY_pgctl -D $OCF_RESKEY_pgdata -m fast stop
@@ -293,7 +293,7 @@ pgrepmgr_demote() {
 
 	    fi
 
-	    if [[ pgrepmgr_status ]]; then
+	    if pgrepmgr_status; then
 		## hmm okay, something really weird is going on,
 		## exit immediately
 		ocf_log err "An fatal error occured: instance is not shutting down"
@@ -306,7 +306,7 @@ pgrepmgr_demote() {
 
 	fi
 
-	## If reached here, PGSQL shut be successfully shut down, proceed:
+	## If reached here, PGSQL has successfully shut down, proceed:
 	## First, we need to make sure the old PGDATA isn't present anymore
 	ocf_log debug "Dropping $OCF_RESKEY_pgdata"
 
@@ -318,7 +318,7 @@ pgrepmgr_demote() {
 
 	    ## TODO: Much more checks here...
 
-	    if [[ ! rm -rf ${OCF_RESKEY_pgdata} ]]; then
+	    if ! rm -rf ${OCF_RESKEY_pgdata} ; then
 		ocf_log err "Could not delete cluster directory \"${OCF_RESKEY_pgdata}\""
 		rm -f $CLONE_LOCK
 		return $OCF_ERR_GENERIC
@@ -338,7 +338,7 @@ pgrepmgr_demote() {
 	## Handle error cases of repmgr and issue specific
 	## error messages
 
-	if [[ RC -ne 0 ]]; then
+	if [[ $RC -ne 0 ]]; then
 
 	    case $RC in
 		1) 
