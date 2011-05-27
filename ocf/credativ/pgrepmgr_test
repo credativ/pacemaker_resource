@@ -248,8 +248,8 @@ EOF
 pgrepmgr_start() {
 
     ocf_log info "$RESOURCE:START"
-    pgrepmgr_status
     local PGCTLRC=0
+    pgrepmgr_status
 
     if [[ $? -eq $OCF_NOT_RUNNING ]]; then
 	ocf_log info "START: starting PostgreSQL instance"
@@ -299,7 +299,7 @@ pgrepmgr_status() {
     ocf_log info "pid file in $PIDFILE"
     if [ ! -f $PIDFILE ]
     then
-	ocf_log debug "$RESOURCE pidfile $PIDFILE doesn not exist"
+	ocf_log debug "$RESOURCE pidfile $PIDFILE does not exist"
         # No PID file
 	return $OCF_NOT_RUNNING
     fi
@@ -447,7 +447,7 @@ pgrepmgr_promote() {
 	    ## node is a standby and we want to promote it to a primary.
 	    ## Call repmgr to activate it.
 	    ocf_log info "$RESOURCE: standby about to activated as primary node"
-	    runasowner ${OCF_RESKEY_repmgrbindir}/repmgr -f ${OCF_RESKEY_repmgr_config} standby promote
+	    runasowner PATH=$PATH ${OCF_RESKEY_repmgrbindir}/repmgr -f ${OCF_RESKEY_repmgr_config} standby promote
 	    RC=$?
 
 	    if [[ $RC -ne 0 ]]; then
