@@ -249,11 +249,18 @@ pgrepmgr_start() {
 
     ocf_log info "$RESOURCE:START"
     pgrepmgr_status
+    local PGCTLRC=0
 
     if [[ $? -eq $OCF_NOT_RUNNING ]]; then
 	ocf_log info "START: starting PostgreSQL instance"
 	ocf_log info "START: ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} start"
 	runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} start
+	PGCTLRC=$?
+    fi
+
+    if [[ $PGCTLRC -ne 0 ]]; then
+	ocf_log info "START: could not start PostgreSQL instance"
+	return $OCF_ERR_GENERIC
     fi
 
     while :
@@ -468,10 +475,10 @@ pgrepmgr_demote() {
     ## Check wether this node is a primary instance
     pgrepmgr_get_replication_status
 
-    if [[ $? -eq $PGREPMGR_STATUS_IS_PRIMARY ]]; then
+    if [[ $? -eq $PGREPMGR_STATUS_IS_HOT_STANDBY ]]; then
 
-	ocf_log info "$RESOURCE demote: PostgreSQL instance found as primary"
-	pgrepmgr_cib_status "START:refused to demote primary"
+	ocf_log info "$RESOURCE demote: PostgreSQL instance already standby"
+	pgrepmgr_cib_status "START:refused to demote standby"
 	return $OCF_SUCCESS
 
     else
