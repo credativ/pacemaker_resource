@@ -470,6 +470,8 @@ pgrepmgr_promote() {
 
 pgrepmgr_demote() {
 
+    local RC=$OCF_SUCCESS
+
     ## Check wether this node is a primary instance
     pgrepmgr_get_replication_status
 
@@ -477,146 +479,11 @@ pgrepmgr_demote() {
 
 	ocf_log info "$RESOURCE demote: PostgreSQL instance already standby"
 	pgrepmgr_cib_status "START:refused to demote standby"
-	return $OCF_SUCCESS
-
-    else
-
-	## OK, now comes the tricky part. This is a primary instance, and we want to
-	## demote it to a standby. This requires us to build the standby from scratch.
-	## Since this could be a long operation, we need to take care.
-	if ! touch "$CLONE_LOCK"; then
-	    ocf_log info "Could not create file \"${CLONE_LOCK}\""
-	    return $OCF_ERR_GENERIC
-	fi
-
-	## First, shut the server down, if not already done
-	if pgrepmgr_status ; then
-
-	    ocf_log debug "Shutting down PRIMARY"
-	    runasowner $OCF_RESKEY_pgctl -D $OCF_RESKEY_pgdata -m fast stop
-
-	    ## still alive?
-	    if pgrepmgr_status ; then
-
-		ocf_log debug "Shutting PRIMARY not succeeded, retry with immediate shutdown"
-
-		## oops, something is weird, maybe instance hangs somewhere,
-		## try to make it the hard way...
-		runasowner $OCF_RESKEY_pgctl -D $OCF_RESKEY_pgdata -m immediate stop
-
-		## Wait
-		count=0
-		while [ $count -lt $OCF_RESKEY_stop_escalate ]
-		do
-
-		    if ! pgrepmgr_status; then
-			# success
-			break;
-		    fi
-		    count = $(expr $count + 1)
-		    sleep 1
-
-		done
-
-	    fi
-
-	    if pgrepmgr_status ; then
-		## hmm okay, something really weird is going on,
-		## exit immediately
-		ocf_log info "An fatal error occured: instance is not shutting down"
-		pgrepmgr_cib_status "ERROR:instance not shutting down"
-		rm -f $CLONE_LOCK
-		return $OCF_ERR_GENERIC
-	    else
-		ocf_log "Shutdown immediate succeeded"
-	    fi
-
-	fi
-
-	## If reached here, PGSQL shut be successfully shut down, proceed:
-	## First, we need to make sure the old PGDATA isn't present anymore
-	ocf_log info "Dropping $OCF_RESKEY_pgdata"
-
-	## if ${OCF_RESKEY_pgdata} doesn't exist yet, nothing to do here.
-	## Otherwise we need to get rid of it, because we are forced
-	## to resync with the primary node. This is a very destructive
-	## task to do, so do some preliminary checks before.
-	if [[ -d "${OCF_RESKEY_pgdata}" ]]; then
-
-	    ## TODO: Much more checks here...
-
-	    if ! rm -rf "${OCF_RESKEY_pgdata}"; then
-		ocf_log info "Could not delete cluster directory \"${OCF_RESKEY_pgdata}\""
-		rm -f $CLONE_LOCK
-		return $OCF_ERR_GENERIC
-	    fi
-
-	fi
-
-	local FIN_RC=$OCF_ERR_GENERIC
-
-        ## Clone the current master
-	pgrepmgr_do_standby_clone
-
 	RC=$?
-
-	## Handle error cases of repmgr and issue specific
-	## error messages
-
-	if [[ $RC -ne 0 ]]; then
-
-	    case $RC in
-		1) 
-		    ocf_log info "$RESOURCE demote: bad repmgr config"
-		    ;;
-		2)
-		    ocf_log info "$RESOURCE demote: rsync error"
-		    ;;
-		3)
-		    ocf_log info "$RESOURCE demote: pg_stop_backup() failed"
-		    ;;
-		5)
-		    ocf_log info "$RESOURCE demote: needs xlog"
-		    ;;
-		*)
-		    ocf_log info "$RESOURCE demote: failed to clone standby"
-		    ;;
-	    esac
-
-	    pgrepmgr_cib_status "ERROR:standby demote failed"
-
-	    ## an error has occured, cleanup
-	    rm -f $CLONE_LOCK
-	    return $OCF_ERR_GENERIC
-
-	else
-
-	    ocf_log info "STANDBY CLONE ok"
-	    ocf_log debug "Starting new standby"
-
-	    ## Now start the new standby
-	    runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} start
-	    RC=$?
-
-	    if [[ $RC -eq 0 ]]; then
-
-		ocf_log debug "Standby instance started"
-		pgrepmgr_cib_status "STANDBY:instance standby"
-		rm -f $CLONE_LOCK
-		return $OCF_SUCCESS
-
-	    else
-
-		ocf_log err "Standby instance could not be started"
-		rm -rf $CLONE_LOCK
-		return $OCF_NOT_RUNNING
-
-	    fi
-
-	fi
 
     fi
     
+    return $RC
 }
 
 ##
