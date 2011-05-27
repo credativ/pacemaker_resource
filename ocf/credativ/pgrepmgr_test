@@ -546,14 +546,7 @@ pgrepmgr_demote() {
 	local FIN_RC=$OCF_ERR_GENERIC
 
         ## Clone the current master
-	runasowner ${OCF_RESKEY_repmgrbindir}/repmgr \
-	    -U${OCF_RESKEY_primary_user} \
-	    -d${OCF_RESKEY_primary_db} \
-	    -p${OCF_RESKEY_primary_port} \
-	    -D${OCF_RESKEY_pgdata} \
-	    -R${OCF_RESKEY_resowner} \
-	    -w${OCF_RESKEY_wal_keep_segments} \
-	    standby clone ${OCF_RESKEY_primary_host}
+	pgrepmgr_do_standby_clone
 
 	RC=$?
 
@@ -614,6 +607,63 @@ pgrepmgr_demote() {
 
     fi
     
+}
+
+##
+## Process notifications to this resource agent
+##
+pgrepmgr_notify() {
+
+    ## initial variables, required to process notification request
+    local ACTION_TYPE=${OCF_RESKEY_CRM_meta_notify_type}
+    local ACTION_OP=${OCF_RESKEY_CRM_meta_notify_operation}
+    local ME=$(uname -n)
+
+    ocf_log debug "$RESOURCE notify: received $ACTION_TYPE notification for event $ACTION_OP"
+
+    case $ACTION_TYPE in
+
+	pre)
+	    case $ACTION_OP in
+		promote)
+		    ocf_log debug "$RESOURCE notify: pre-promote on $ME"
+		    ;;
+	    esac
+	    ;;
+	post)
+	    case $ACTION_OP in
+		promote)
+
+		    if [[ "$OCF_RESKEY_CRM_meta_notify_promote_uname" != "$ME" ]]; then
+			ocf_log debug "$RESOURCE notify: $ACTION_TYPE/$ACTION_OP resync"
+			ocf_log debug "$RESOURCE notify: master is $OCF_RESKEY_CRM_meta_notify_promote_uname"
+
+			## point to the new master
+			
+		    fi
+		    ;;
+
+	    esac
+	    ;;
+
+    esac
+
+    return $OCF_SUCCESS;
+}
+
+pgrepmgr_do_standby_clone() {
+
+    runasowner ${OCF_RESKEY_repmgrbindir}/repmgr \
+	-U${OCF_RESKEY_primary_user} \
+	-d${OCF_RESKEY_primary_db} \
+	-p${OCF_RESKEY_primary_port} \
+	-D${OCF_RESKEY_pgdata} \
+	-R${OCF_RESKEY_resowner} \
+	-w${OCF_RESKEY_wal_keep_segments} \
+	standby clone ${OCF_RESKEY_primary_host}
+
+    return $?
+
 }
 
 pgrepmgr_cib_status() {
