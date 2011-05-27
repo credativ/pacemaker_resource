@@ -469,7 +469,7 @@ pgrepmgr_demote() {
 
     if [[ $? -eq $PGREPMGR_STATUS_IS_PRIMARY ]]; then
 
-	ocf_log info "Instance is a primary"
+	ocf_log info "$RESOURCE demote: PostgreSQL instance found as primary"
 	pgrepmgr_cib_status "START:refused to demote primary"
 	return $OCF_SUCCESS
 
@@ -623,7 +623,7 @@ pgrepmgr_notify() {
     local ACTION_OP=${OCF_RESKEY_CRM_meta_notify_operation}
     local ME=$(uname -n)
 
-    ocf_log debug "$RESOURCE notify: received $ACTION_TYPE notification for event $ACTION_OP"
+    ocf_log debug "$RESOURCE notify: received $ACTION_TYPE notification for event $ACTION_OP, master $OCF_RESKEY_CRM_meta_notify_master_uname"
 
     case $ACTION_TYPE in
 
@@ -631,6 +631,15 @@ pgrepmgr_notify() {
 	    case $ACTION_OP in
 		promote)
 		    ocf_log debug "$RESOURCE notify: pre-promote on $ME"
+		    ;;
+		demote)
+		    ocf_log debug "$RESOURCE notify: pre-demote on $ME"
+		    ;;
+		start)
+		    ocf_log debug "$RESOURCE notify: pre-start on $ME"
+		    ;;
+		stop)
+		    ocf_log debug "$RESOURCE notify: pre-stop on $ME"
 		    ;;
 	    esac
 	    ;;
@@ -646,7 +655,15 @@ pgrepmgr_notify() {
 			
 		    fi
 		    ;;
-
+		demote)
+		    ocf_log debug "$RESOURCE notify: post-demote on $ME"
+		    ;;
+		start)
+		    ocf_log debug "$RESOURCE notify: post-start on $ME"
+		    ;;
+		stop)
+		    ocf_log debug "$RESOURCE notify: post-stop on $ME"
+		    ;;
 	    esac
 	    ;;
 
