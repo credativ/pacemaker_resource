@@ -1,0 +1,15 @@
+.PHONY=distri
+PROJECT=pgrepmgr
+FILES=ocf/credativ/pgrepmgr
+PGREPMGR_BACKUP_VERSION=0.2
+
+distribution: ${FILES}
+	mkdir -p ${PROJECT}-${PGREPMGR_BACKUP_VERSION}
+	cp -v ${FILES} ${PROJECT}-${PGREPMGR_BACKUP_VERSION}
+	tar -cvjf ${PROJECT}-${PGREPMGR_BACKUP_VERSION}.tar.bz2 ${PROJECT}-${PGREPMGR_BACKUP_VERSION}
+	rm -rf ${PROJECT}-${PGREPMGR_BACKUP_VERSION}
+
+clean:
+	rm -f *~
+	rm -f *.*~
+	rm -rf ${PROJECT}-${PGREPMGR_BACKUP_VERSION}.tar.bz2
