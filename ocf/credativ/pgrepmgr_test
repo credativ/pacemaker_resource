@@ -1,0 +1,659 @@
+#!/bin/bash
+#
+# Description:  Manages a cluster service for PostgreSQL
+#               streaming replication clusters
+#
+# Author:       Bernd Helmle (bernd.helmle@credativ.de)
+
+# OCF parameters:
+#
+#     OCF_RESKEY_pgpidfile         - Path to the local PostgreSQL PID file
+#     OCF_RESKEY_primary_db        - PostgreSQL primary database to connect to for CLONING
+#     OCF_RESKEY_primary_host      - PostgreSQL primary ip address to connect for CLONING
+#     OCF_RESKEY_primary_port      - PostgreSQL primary port to connect to for CLONING
+#     OCF_RESKEY_primary_user      - PostgreSQL primary user to connect as for CLONING
+#     OCF_RESKEY_pgdata            - Path to the local PGDATA directory
+#     OCF_RESKEY_rsync_user        - Rsync user name to use for repmgr during CLONING
+#     OCF_RESKEY_resowner          - Resource owner (default 'postgres')
+#     OCF_RESKEY_wal_keep_segments - Forced number of WALs to keep (GUC wal_keep_segments)
+#     OCF_RESKEY_repmgr_config     - Full path to the repmgr configuration file
+#     OCF_RESKEY_pgctl             - Full path to pg_ctl binary of the local PostgreSQL instance
+#     OCF_RESKEY_repmgrbindir      - Full path to repmgr binary. This is also where we assume
+#                                    where the repmgrd binary resides.
+#     OCF_RESKEY_psqlbin           - psql binary location (full path)
+
+OCF_ROOT=/usr/lib/ocf
+: ${OCF_FUNCTIONS_DIR=${OCF_ROOT}/resource.d/heartbeat}
+. ${OCF_FUNCTIONS_DIR}/.ocf-shellfuncs
+
+: ${OCF_RESKEY_repmgr_conf="/etc/repmgr.conf"}
+: ${OCF_RESKEY_stop_escalate=30}
+
+##
+## Internal resource parameters
+##
+
+PIDFILE="$OCF_RESKEY_pgpidfile"
+BACKUPLABEL="${OCF_RESKEY_pgdata}/backup_label"
+ATTRD_UPDATER="${HA_SBIN_DIR}/attrd_updater -q -d 0"
+CRM_MASTER="${HA_SBIN_DIR}/crm_master -l reboot "
+PGREPMGR_STATUS_NAME="pgrepmgr-status"
+CLONE_LOCK="${OCF_RESKEY_tmpdir}/PGSQL.${OCF_RESKEY_primary_host}.${OCF_RESKEY_primary_port}.clone"
+RESOURCE="$(basename $0)"
+
+## override PATH
+## this is a hack for repmgr, since it silently assumes to have pg_ctl in its PATH
+PATH="$PATH":"$(dirname ${OCF_RESKEY_pgctl})":"$(dirname ${OCF_RESKEY_psqlbin})"
+
+PSQLCMD="$OCF_RESKEY_psqlbin -v ON_ERROR_STOP=1 -U $OCF_RESKEY_resowner -d $OCF_RESKEY_resowner -qXtnA"
+if [[ ! -z $OCF_RESKEY_primary_port ]]; then
+    PSQLCMD="$PSQLCMD -p $OCF_RESKEY_primary_port -c"
+else
+    PSQLCMD="$PSQLCMD -c"
+fi
+
+if [[ -z "${OCF_RESKEY_resowner}" ]]; then
+    OCF_RESKEY_resowner="postgres"
+fi
+
+##
+## Internal status codes
+##
+PGREPMGR_STATUS_IS_PRIMARY=0
+PGREPMGR_STATUS_IS_HOT_STANDBY=1
+PGREPMGR_STATUS_IS_NOT_RUNNING=2
+PGREPMGR_STATUS_IS_FATAL=3
+PGREPMGR_STATUS_IS_BAD_CONN=4
+PGREPMGR_STATUS_IS_SCRIPT_ERR=5
+
+usage() {
+
+    cat<<EOF
+
+	usage: $0 start|stop|status|monitor|meta-data|validate-all|methods
+
+	$0 manages a PostgreSQL Server as an HA resource.
+
+         The 'start' operation starts the PostgreSQL server.
+         The 'stop' operation stops the PostgreSQL server.
+         The 'status' operation reports whether the PostgreSQL is up.
+         The 'monitor' operation reports whether the PostgreSQL is running.
+         The 'promote' operation delegates primary role to the PostgreSQL instance
+         The 'demote' operation makes a PostgreSQL instance to a standby
+         The 'validate-all' operation reports whether the parameters are valid.
+         The 'methods' operation reports on the methods $0 supports.
+
+EOF
+  return $OCF_ERR_ARGS
+}
+
+meta_data() {
+cat <<EOF
+<?xml version="1.0"?>
+<!DOCTYPE resource-agent SYSTEM "ra-api-1.dtd">
+<resource-agent name="pgrepmgr">
+<version>1.0</version>
+
+<longdesc lang="en">
+Resource script for PostgreSQL Streaming Replication Clusters.
+</longdesc>
+<shortdesc lang="en">Manages a PostgreSQL Streaming Replication Cluster</shortdesc>
+
+<parameters>
+
+<parameter name="psqlbin" unique="0" required="0">
+<longdesc lang="en">
+Location (full path) of the psqbin binary.
+</longdesc>
+<shortdesc lang="en">psqlbin</shortdesc>
+<content type="string"/>
+</parameter>
+
+<parameter name="repmgrbindir" unique="0" required="0">
+<longdesc lang="en">
+Location (full path) of the repmgr and repmgrd binaries. This specifies
+the directory where the binaries are installed, in opposite to psqlbin
+</longdesc>
+<shortdesc lang="en">repmgrbindir</shortdesc>
+<content type="string"/>
+</parameter>
+
+<parameter name="pgctl" unique="0" required="0">
+<longdesc lang="en">
+Full path to pg_ctl binary of the local PostgreSQL instance.
+</longdesc>
+<shortdesc lang="en">pgctl</shortdesc>
+<content type="string"/>
+</parameter>
+
+<parameter name="pgpidfile" unique="0" required="1">
+<longdesc lang="en">
+PID file of the local PostgreSQL instance
+</longdesc>
+<shortdesc lang="en">pgpidfile</shortdesc>
+<content type="string"/>
+</parameter>
+
+<parameter name="primary_db" unique="0" required="1">
+<longdesc lang="en">
+Databasename of the primary node to connect to
+</longdesc>
+<shortdesc lang="en">primary_db</shortdesc>
+<content type ="string"/>
+</parameter>
+
+<parameter name ="primary_host" unique="0" required="1">
+<longdesc lang="en">
+Hostname/IP of the primary node to connect to
+</longdesc>
+<shortdesc>primary_host</shortdesc>
+<content type="string"/>
+</parameter>
+
+<parameter name ="primary_port" unique="0" required="1">
+<longdesc lang="en">
+Port number of the primary node to connect to
+</longdesc>
+<shortdesc>primary_port</shortdesc>
+<content type="integer"/>
+</parameter>
+
+<parameter name ="primary_user" unique="0" required="1">
+<longdesc lang="en">
+Username of the primary node to connect as
+</longdesc>
+<shortdesc>primary_user</shortdesc>
+<content type="string"/>
+</parameter>
+
+<parameter name ="pgdata" unique="0" required="1">
+<longdesc lang="en">
+Local PGDATA directory (local PostgreSQL instance)
+</longdesc>
+<shortdesc>pgdata</shortdesc>
+<content type="string"/>
+</parameter>
+
+<parameter name ="rsync_user" unique="0" required="1">
+<longdesc lang="en">
+rsync user to use for cloning a remote instance
+</longdesc>
+<shortdesc>rsync_user</shortdesc>
+<content type="string"/>
+</parameter>
+
+<parameter name ="wal_keep_segments" unique="0" required="1">
+<longdesc lang="en">
+Maximum number of XLOG segments to keep (instructs GUC 
+wal_keep_segments of the primary node).
+</longdesc>
+<shortdesc>wal_keep_segments</shortdesc>
+<content type="integer"/>
+</parameter>
+
+<parameter name ="repmgr_config" unique="0" required="0">
+<longdesc lang="en">
+repmgr configuration file (default '/etc/repmgr.conf')
+</longdesc>
+<shortdesc>repmgr_config</shortdesc>
+<content type="string"/>
+</parameter>
+
+<parameter name ="resowner" unique="0" required="0">
+<longdesc lang="en">
+Resource owner (system shell user) of this agent (default 'postgres')
+</longdesc>
+<shortdesc>resowner</shortdesc>
+<content type="string"/>
+</parameter>
+
+</parameters>
+
+<actions>
+<action name="start" timeout="20" />
+<action name="stop"  timeout="20" />
+<action name="reload"  timeout="20" />
+<action name="promote" timeout="40" />
+<action name="demote" timeout="43200" />
+<action name="meta-data" timeout="5" />
+<action name="monitor" timeout="40" />
+<action name="notify" timeout="60" />
+</actions>
+
+</resource-agent>
+EOF
+
+exit $OCF_SUCCESS
+}
+
+runasowner() {
+    cd $OCF_RESKEY_pgdata; su $OCF_RESKEY_resowner -c "$*"
+}
+
+pgrepmgr_methods() {
+    cat <<EOF
+	start
+	stop
+	status
+	demote
+	promote
+	monitor
+	notify
+	methods
+	meta-data
+	validate-all
+EOF
+    return $OCF_SUCCESS
+}
+
+pgrepmgr_start() {
+
+    ocf_log debug "$RESOURCE:START"
+    local PGCTLRC=0
+    pgrepmgr_status
+
+    if [[ $? -eq $OCF_NOT_RUNNING ]]; then
+	ocf_log info "START: starting PostgreSQL instance"
+	ocf_log debug "START: ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} start"
+	runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} start
+	PGCTLRC=$?
+    fi
+
+    if [[ $PGCTLRC -ne 0 ]]; then
+	ocf_log info "START: could not start PostgreSQL instance"
+	return $OCF_ERR_GENERIC
+    fi
+
+    while :
+    do
+	pgrepmgr_status
+        rc=$?
+        if [ $rc -eq 0 ]; then
+            break;
+        fi 
+        sleep 1
+	ocf_log debug "PostgreSQL still hasn't started yet. Waiting..."
+    done
+    ocf_log info "PostgreSQL is started."
+
+    return $?
+
+}
+
+pgrepmgr_stop() {
+
+    ## TODO: If the current node is a standby, shut down
+    ## repmgrd
+    pgrepmgr_status
+
+    if [[ $? -eq $OCF_SUCCESS ]]; then
+	ocf_log info "stopping PostgreSQL instance"
+	ocf_log debug "${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -m fast stop"
+	runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -m fast stop
+	pgrepmgr_modpref -D
+    fi
+
+    return $?
+
+}
+
+##
+## Returns the status of the running PostgreSQL instance
+##
+pgrepmgr_status() {
+    ocf_log debug "pid file in $PIDFILE"
+    if [ ! -f $PIDFILE ]
+    then
+	ocf_log debug "$RESOURCE pidfile $PIDFILE does not exist"
+        # No PID file
+	return $OCF_NOT_RUNNING
+    fi
+    
+    runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} status
+    if [[ $? -ne 0 ]]; then
+	return $OCF_NOT_RUNNING
+    else
+	return $OCF_SUCCESS
+    fi
+}
+
+##
+## Checks wether the current PostgreSQL node is running
+## as a primary or hot standby instance
+##
+pgrepmgr_get_replication_status() {
+
+    STATUS=$(runasowner "$PSQLCMD 'SELECT pg_is_in_recovery();'")
+
+    ## if psql didn't succeed, we need to check wether the instance is
+    ## actually running..
+
+    case $? in
+
+	1) ocf_log debug "psql fatal"; return $PGREPMGR_STATUS_IS_FATAL;;
+	2) ocf_log debug "psql bad conn"; return $PGREPMGR_STATUS_IS_BAD_CONN;;
+	3) ocf_log debug "psql script err"; return $PGREPMGR_STATUS_IS_SCRIPT_ERR;;
+	*) ## fall through
+
+    esac
+
+    if [[ "$STATUS" = 'f' ]]; then
+	return $PGREPMGR_STATUS_IS_PRIMARY
+    fi
+
+    return $PGREPMGR_STATUS_IS_HOT_STANDBY
+
+}
+
+pgrepmgr_modpref() {
+
+    $CRM_MASTER $*
+    return $?
+
+}
+
+## Monitor PostgreSQL instance. Since repmgr is depending on a running
+## PostgreSQL instance, make sure it is running
+pgrepmgr_monitor() {
+
+    local REPLICATION_STATUS
+
+    if ocf_is_probe; then
+	ocf_log debug "$RESOURCE monitor PROBE"
+    else
+	ocf_log debug "$RESOURCE monitor"
+    fi
+    
+    pgrepmgr_status
+
+    if [[ $? -ne 0 ]]; then
+	ocf_log warn "$RESOURCE monitor: PostgreSQL not running"
+	pgrepmgr_cib_status "STOP:not running"
+	return $OCF_NOT_RUNNING
+    fi
+    
+    ocf_log info "$RESOURCE monitor: PostgreSQL running"
+    
+    ## NOTE: PostgreSQL might be running but not yet 
+    ## accepting any connections, wait at least some seconds...
+    local WAIT_CNT=0
+    while :
+    do
+
+	if [[ $WAIT_CNT -eq $OCF_RESKEY_stop_escalate ]]; then
+	    break;
+	fi
+
+	WAIT_CNT=$(expr $WAIT_CNT + 1)
+
+	pgrepmgr_get_replication_status
+	REPLICATION_STATUS=$?
+
+	if [[ $REPLICATION_STATUS -eq $PGREPMGR_STATUS_IS_BAD_CONN 
+		    || $REPLICATION_STATUS -eq $PGREPMGR_STATUS_IS_FATAL ]]; then
+	    ocf_log debug "PostgreSQL doesn't accept connections yet, retry..."
+	    sleep 1
+	else
+	    break
+	fi
+
+    done
+
+    case $REPLICATION_STATUS in
+	
+	$PGREPMGR_STATUS_IS_HOT_STANDBY)
+           pgrepmgr_cib_status "HOT STANDBY"
+	   ocf_log info "$RESOURCE monitor: instance is HOT STANDBY"
+	   ## falls through to end of function
+	   ;;
+	
+	$PGREPMGR_STATUS_IS_PRIMARY)
+	   pgrepmgr_status "PRIMARY"
+	   ocf_log info "$RESOURCE monitor: instance is PRIMARY"
+	   if ocf_is_probe; then
+	       return $OCF_RUNNING_MASTER
+	   fi
+	   pgrepmgr_modpref -v 75
+	   ;;
+	 *)
+	 
+	  ## oops
+	   pgrepmgr_cib_status "STOP:unknown state"
+	   ocf_log info "$RESOURCE monitor: unknown state $*"
+	   return $OCF_ERR_GENERIC
+    
+    esac
+
+    return $OCF_SUCCESS
+}
+
+pgrepmgr_promote() {
+
+    ocf_log info "$RESOURCE promote: promoting"
+
+    pgrepmgr_status
+
+    if [[ $? -ne $OCF_SUCCESS ]]; then
+
+	ocf_log info "PostgreSQL not running"
+	return $OCF_NOT_RUNNING
+
+    else
+	local REPLICATION_STATUS
+	pgrepmgr_get_replication_status
+	REPLICATION_STATUS=$?
+
+	## Not running in recovery mode indicates primary node
+	if [[ ! -f $OCF_RESKEY_pgdata/recovery.conf 
+		    && $REPLICATION_STATUS -eq $PGREPMGR_STATUS_IS_PRIMARY ]]; then
+
+	    ocf_log info "$RESOURCE promote: Already primary"
+	    pgrepmgr_cib_status "PRIMARY"
+	    return $OCF_SUCCESS
+
+	else
+	    local RC
+
+	    ## An existing recovery.conf tells us, that this
+	    ## node is a standby and we want to promote it to a primary.
+	    ## Call repmgr to activate it.
+	    ocf_log info "$RESOURCE: standby about to activated as primary node"
+	    runasowner PATH=$PATH ${OCF_RESKEY_repmgrbindir}/repmgr -f ${OCF_RESKEY_repmgr_config} standby promote
+	    RC=$?
+
+	    if [[ $RC -ne 0 ]]; then
+		ocf_log info "$RESOURCE promote: error promoting instance"
+		ocf_log info "ERR:failed to promote"
+		RC=$OCF_SUCCESS
+	    else
+		ocf_log info "$RESOURCE: standby promoted to primary"
+		pgrepmgr_modpref -v 75
+		RC=$OCF_SUCCESS
+	    fi
+
+	    return $RC
+	fi
+
+    fi
+
+}
+
+pgrepmgr_demote() {
+
+    local RC=$OCF_SUCCESS
+
+    ## Check wether this node is a primary instance
+    pgrepmgr_get_replication_status
+
+    if [[ $? -eq $PGREPMGR_STATUS_IS_HOT_STANDBY ]]; then
+
+	ocf_log info "$RESOURCE demote: PostgreSQL instance already standby"
+	pgrepmgr_cib_status "START:refused to demote standby"
+	RC=$?
+
+    fi
+
+    pgrepmgr_modpref -D
+    return $RC
+}
+
+##
+## Process notifications to this resource agent
+##
+pgrepmgr_notify() {
+
+    ## initial variables, required to process notification request
+    local ACTION_TYPE=${OCF_RESKEY_CRM_meta_notify_type}
+    local ACTION_OP=${OCF_RESKEY_CRM_meta_notify_operation}
+    local ME=$(uname -n)
+
+    ocf_log debug "$RESOURCE notify: received $ACTION_TYPE notification for event $ACTION_OP, master $OCF_RESKEY_CRM_meta_notify_master_uname"
+
+    case $ACTION_TYPE in
+
+	pre)
+	    case $ACTION_OP in
+		promote)
+		    ocf_log debug "$RESOURCE notify: pre-promote on $ME"
+		    if [[ "$OCF_RESKEY_CRM_meta_notify_promote_uname" != "$ME" ]]; then
+			ocf_log debug "$RESOURCE notify: $ACTION_TYPE/$ACTION_OP resync"
+			ocf_log debug "$RESOURCE notify: master is $OCF_RESKEY_CRM_meta_notify_promote_uname"
+		    else
+			ocf_log debug "$RESOURCE notify: refresh CRM master election"
+		    fi
+		    ;;
+		demote)
+		    ocf_log debug "$RESOURCE notify: pre-demote on $ME"
+		    ;;
+		start)
+		    ocf_log debug "$RESOURCE notify: pre-start on $ME"
+		    ;;
+		stop)
+		    ocf_log debug "$RESOURCE notify: pre-stop on $ME"
+		    ;;
+	    esac
+	    ;;
+	post)
+	    case $ACTION_OP in
+		promote)
+		    ocf_log debug "$RESOURCE notify: pre-promote on $ME"
+		    ;;
+		demote)
+		    ocf_log debug "$RESOURCE notify: post-demote on $ME"
+		    ;;
+		start)
+		    ocf_log debug "$RESOURCE notify: post-start on $ME"
+		    ;;
+		stop)
+		    ocf_log debug "$RESOURCE notify: post-stop on $ME"
+		    ;;
+	    esac
+	    ;;
+
+    esac
+
+    return $OCF_SUCCESS;
+}
+
+##
+## Not yet in use, Pacemaker doesn't seem to work well
+## with demoting/resyncing a primary node.
+##
+pgrepmgr_do_standby_clone() {
+
+    runasowner PATH=$PATH ${OCF_RESKEY_repmgrbindir}/repmgr \
+	-U${OCF_RESKEY_primary_user} \
+	-d${OCF_RESKEY_primary_db} \
+	-p${OCF_RESKEY_primary_port} \
+	-D${OCF_RESKEY_pgdata} \
+	-R${OCF_RESKEY_resowner} \
+	-w${OCF_RESKEY_wal_keep_segments} \
+	standby clone ${OCF_RESKEY_primary_host}
+
+    return $?
+
+}
+
+pgrepmgr_cib_status() {
+    return $OCF_SUCCESS
+}
+
+pgrepmgr_validate_all() {
+    return $OCF_SUCCESS
+}
+
+#
+#   'main' starts here...
+#
+
+
+if [ $# -ne 1 ]
+then
+    usage
+    exit $OCF_ERR_GENERIC
+fi
+
+case "$1" in
+    methods)    pgrepmgr_methods
+                exit $?;;
+		
+    meta-data)  meta_data
+                exit $OCF_SUCCESS;;
+
+    validate-all) pgrepmgr_validate_all
+                exit $?;;
+esac
+
+if ! pgrepmgr_validate_all
+then
+    case "$1" in
+        stop)    exit $OCF_SUCCESS;;
+        monitor) exit $OCF_NOT_RUNNING;;
+        status)  exit $OCF_NOT_RUNNING;;
+        *)       exit $OCF_ERR_INSTALLED;;
+    esac
+fi
+
+US=`id -u -n`
+
+if [ $US != root -a $US != "$OCF_RESKEY_resowner" ]
+then
+    ocf_log info "$0 must be run as root or $OCF_RESKEY_resowner"
+    exit $OCF_ERR_GENERIC
+fi
+
+# What kind of method was invoked?
+case "$1" in
+    status)     if pgrepmgr_status
+                then
+                    ocf_log debug "PGREPMGR is up"
+		    pgrepmgr_get_replication_status
+
+		    if [[ $? -eq $PGREPMGR_STATUS_IS_PRIMARY ]]; then
+			ocf_log debug "PGREPMGR PRIMARY"
+		    else
+			ocf_log debug "PGREPMGR HOT STANDBY"
+		    fi
+                    exit $OCF_SUCCESS
+                else
+                    ocf_log debug "PGREPMGR is down"
+                    exit $OCF_NOT_RUNNING
+                fi;;
+
+    monitor)    pgrepmgr_monitor
+                exit $?;;
+
+    start)      pgrepmgr_start               
+                exit $?;;
+
+    promote)    pgrepmgr_promote
+	        exit $?;;
+    demote)     pgrepmgr_demote
+	        exit $?;;
+    stop)       pgrepmgr_stop
+                exit $?;;
+    notify)     pgrepmgr_notify
+	        exit $?;;
+    *)
+                exit $OCF_ERR_UNIMPLEMENTED;;
+esac
