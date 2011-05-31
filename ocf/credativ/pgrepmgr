@@ -36,6 +36,7 @@ OCF_ROOT=/usr/lib/ocf
 PIDFILE="$OCF_RESKEY_pgpidfile"
 BACKUPLABEL="${OCF_RESKEY_pgdata}/backup_label"
 ATTRD_UPDATER="${HA_SBIN_DIR}/attrd_updater -q -d 0"
+CRM_MASTER="${HA_SBIN_DIR}/crm_master -l reboot "
 PGREPMGR_STATUS_NAME="pgrepmgr-status"
 CLONE_LOCK="${OCF_RESKEY_tmpdir}/PGSQL.${OCF_RESKEY_primary_host}.${OCF_RESKEY_primary_port}.clone"
 RESOURCE="$(basename $0)"
@@ -226,7 +227,7 @@ exit $OCF_SUCCESS
 }
 
 runasowner() {
-    su $OCF_RESKEY_resowner -c "$*"
+    cd $OCF_RESKEY_pgdata; su $OCF_RESKEY_resowner -c "$*"
 }
 
 pgrepmgr_methods() {
@@ -289,6 +290,7 @@ pgrepmgr_stop() {
 	ocf_log info "stopping PostgreSQL instance"
 	ocf_log debug "${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -m fast stop"
 	runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -m fast stop
+	pgrepmgr_modpref -D
     fi
 
     return $?
@@ -308,7 +310,11 @@ pgrepmgr_status() {
     fi
     
     runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} status
-    return $?
+    if [[ $? -ne 0 ]]; then
+	return $OCF_NOT_RUNNING
+    else
+	return $OCF_SUCCESS
+    fi
 }
 
 ##
@@ -336,6 +342,13 @@ pgrepmgr_get_replication_status() {
     fi
 
     return $PGREPMGR_STATUS_IS_HOT_STANDBY
+
+}
+
+pgrepmgr_modpref() {
+
+    $CRM_MASTER $*
+    return $?
 
 }
 
@@ -400,6 +413,7 @@ pgrepmgr_monitor() {
 	   if ocf_is_probe; then
 	       return $OCF_RUNNING_MASTER
 	   fi
+	   pgrepmgr_modpref -v 75
 	   ;;
 	 *)
 	 
@@ -415,16 +429,23 @@ pgrepmgr_monitor() {
 
 pgrepmgr_promote() {
 
-    if ! pgrepmgr_status; then
-	ocf_log err "PostgreSQL not running"
-	pgrepmgr_cib_status "STOP:Instance not running"
+    ocf_log info "$RESOURCE promote: promoting"
+
+    pgrepmgr_status
+
+    if [[ $? -ne $OCF_SUCCESS ]]; then
+
+	ocf_log info "PostgreSQL not running"
 	return $OCF_NOT_RUNNING
 
     else
+	local REPLICATION_STATUS
+	pgrepmgr_get_replication_status
+	REPLICATION_STATUS=$?
 
 	## Not running in recovery mode indicates primary node
 	if [[ ! -f $OCF_RESKEY_pgdata/recovery.conf 
-		    && pg_get_replication_status -eq PGREPMGR_STATUS_PRIMARY ]]; then
+		    && $REPLICATION_STATUS -eq $PGREPMGR_STATUS_IS_PRIMARY ]]; then
 
 	    ocf_log info "$RESOURCE promote: Already primary"
 	    pgrepmgr_cib_status "PRIMARY"
@@ -442,11 +463,11 @@ pgrepmgr_promote() {
 
 	    if [[ $RC -ne 0 ]]; then
 		ocf_log info "$RESOURCE promote: error promoting instance"
-		pgrepmgr_cib_status "ERR:failed to promote"
+		ocf_log info "ERR:failed to promote"
 		RC=$OCF_SUCCESS
 	    else
 		ocf_log info "$RESOURCE: standby promoted to primary"
-		pgrepmgr_cib_status "PRIMARY"
+		pgrepmgr_modpref -v 75
 		RC=$OCF_SUCCESS
 	    fi
 
@@ -471,7 +492,8 @@ pgrepmgr_demote() {
 	RC=$?
 
     fi
-    
+
+    pgrepmgr_modpref -D
     return $RC
 }
 
@@ -493,6 +515,12 @@ pgrepmgr_notify() {
 	    case $ACTION_OP in
 		promote)
 		    ocf_log debug "$RESOURCE notify: pre-promote on $ME"
+		    if [[ "$OCF_RESKEY_CRM_meta_notify_promote_uname" != "$ME" ]]; then
+			ocf_log debug "$RESOURCE notify: $ACTION_TYPE/$ACTION_OP resync"
+			ocf_log debug "$RESOURCE notify: master is $OCF_RESKEY_CRM_meta_notify_promote_uname"
+		    else
+			ocf_log debug "$RESOURCE notify: refresh CRM master election"
+		    fi
 		    ;;
 		demote)
 		    ocf_log debug "$RESOURCE notify: pre-demote on $ME"
@@ -508,14 +536,7 @@ pgrepmgr_notify() {
 	post)
 	    case $ACTION_OP in
 		promote)
-
-		    if [[ "$OCF_RESKEY_CRM_meta_notify_promote_uname" != "$ME" ]]; then
-			ocf_log debug "$RESOURCE notify: $ACTION_TYPE/$ACTION_OP resync"
-			ocf_log debug "$RESOURCE notify: master is $OCF_RESKEY_CRM_meta_notify_promote_uname"
-
-			## point to the new master
-			
-		    fi
+		    ocf_log debug "$RESOURCE notify: pre-promote on $ME"
 		    ;;
 		demote)
 		    ocf_log debug "$RESOURCE notify: post-demote on $ME"
@@ -606,7 +627,9 @@ case "$1" in
     status)     if pgrepmgr_status
                 then
                     ocf_log debug "PGREPMGR is up"
-		    if [[ pgrepmgr_get_replication_status -eq PGREPMGR_STATUS_IS_PRIMARY ]]; then
+		    pgrepmgr_get_replication_status
+
+		    if [[ $? -eq $PGREPMGR_STATUS_IS_PRIMARY ]]; then
 			ocf_log debug "PGREPMGR PRIMARY"
 		    else
 			ocf_log debug "PGREPMGR HOT STANDBY"
