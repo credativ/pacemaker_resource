@@ -33,6 +33,8 @@ OCF_ROOT=/usr/lib/ocf
 ## Internal resource parameters
 ##
 
+MASTER_SCORE=10
+SLAVE_SCORE=5
 PIDFILE="$OCF_RESKEY_pgpidfile"
 BACKUPLABEL="${OCF_RESKEY_pgdata}/backup_label"
 ATTRD_UPDATER="${HA_SBIN_DIR}/attrd_updater -q -d 0"
@@ -276,6 +278,7 @@ pgrepmgr_start() {
     done
     ocf_log info "PostgreSQL is started."
 
+    pgrepmgr_modpref -v ${SLAVE_SCORE}
     return $?
 
 }
@@ -404,6 +407,9 @@ pgrepmgr_monitor() {
 	$PGREPMGR_STATUS_IS_HOT_STANDBY)
            pgrepmgr_cib_status "HOT STANDBY"
 	   ocf_log info "$RESOURCE monitor: instance is HOT STANDBY"
+	   if ocf_is_probe; then
+	       pgrepmgr_modpref -v ${SLAVE_SCORE}
+	   fi
 	   ## falls through to end of function
 	   ;;
 	
@@ -411,9 +417,9 @@ pgrepmgr_monitor() {
 	   pgrepmgr_status "PRIMARY"
 	   ocf_log info "$RESOURCE monitor: instance is PRIMARY"
 	   if ocf_is_probe; then
+	       pgrepmgr_modpref -v ${MASTER_SCORE}
 	       return $OCF_RUNNING_MASTER
 	   fi
-	   pgrepmgr_modpref -v 75
 	   ;;
 	 *)
 	 
@@ -467,7 +473,7 @@ pgrepmgr_promote() {
 		RC=$OCF_SUCCESS
 	    else
 		ocf_log info "$RESOURCE: standby promoted to primary"
-		pgrepmgr_modpref -v 75
+		pgrepmgr_modpref -v ${MASTER_SCORE}
 		RC=$OCF_SUCCESS
 	    fi
 
@@ -489,11 +495,11 @@ pgrepmgr_demote() {
 
 	ocf_log info "$RESOURCE demote: PostgreSQL instance already standby"
 	pgrepmgr_cib_status "START:refused to demote standby"
-	RC=$?
+	RC=$OCF_SUCCESS
 
     fi
 
-    pgrepmgr_modpref -D
+    pgrepmgr_modpref -v ${SLAVE_SCORE}
     return $RC
 }
 
