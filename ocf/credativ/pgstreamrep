@@ -1,0 +1,337 @@
+#!/bin/bash
+# vi:noet:sw=4 ts=4
+#
+# Description:  Manages a cluster service for PostgreSQL
+#               streaming replication clusters
+#
+# Author:       Arnd Hannemann (arnd.hannemann@credativ.de)
+#				Based on work of Bernd Helmle (bernd.helmle@credativ.de)
+#
+# License:		GNU General Public License (GPL v3)
+#
+# OCF parameters:
+#
+#	  OCF_RESKEY_start_opt         - Startup options, options passed to postgress with -o
+#     OCF_RESKEY_pgpidfile         - Path to the local PostgreSQL PID file
+#     OCF_RESKEY_pgdata            - Path to the local PGDATA directory
+#     OCF_RESKEY_pgctl             - Full path to pg_ctl binary of the local PostgreSQL instance
+#     OCF_RESKEY_psql	           - psql binary location (full path)
+#     OCF_RESKEY_resowner          - Resource owner (default 'postgres')
+#	  OCF_RESKEY_logfile		   - Path to PostgresSQL log file
+#	  OCF_RESKEY_trigger_file	   - Path of the trigger file in revovery.conf
+
+
+OCF_ROOT=/usr/lib/ocf
+: ${OCF_FUNCTIONS_DIR=${OCF_ROOT}/resource.d/heartbeat}
+. ${OCF_FUNCTIONS_DIR}/.ocf-shellfuncs
+
+unset LC_ALL; export LC_ALL
+unset LANGUAGE; export LANGUAGE
+
+usage() {
+
+    cat<<EOF
+
+    usage: $0 start|stop|status|monitor|meta-data|validate-all|methods
+
+    $0 manages a PostgreSQL Server as an HA resource.
+
+         The 'start' operation starts the PostgreSQL server.
+         The 'stop' operation stops the PostgreSQL server.
+         The 'status' operation reports whether the PostgreSQL is up.
+         The 'monitor' operation reports whether the PostgreSQL is running.
+         The 'promote' operation delegates primary role to the PostgreSQL instance
+         The 'demote' operation makes a PostgreSQL instance to a standby
+         The 'validate-all' operation reports whether the parameters are valid.
+         The 'methods' operation reports on the methods $0 supports.
+
+EOF
+	return $OCF_ERR_ARGS
+}
+
+meta_data() {
+cat <<EOF
+<?xml version="1.0"?>
+<!DOCTYPE resource-agent SYSTEM "ra-api-1.dtd">
+<resource-agent name="pgstreamrep">
+	<version>1.0</version>
+
+	<longdesc lang="en">
+		Resource script for PostgreSQL Streaming Replication Clusters.
+	</longdesc>
+	<shortdesc lang="en">Manages a PostgreSQL Streaming Replication Cluster</shortdesc>
+
+	<parameters>
+		<parameter name="psql" unique="0" required="0">
+			<longdesc lang="en">
+			Location (full path) of the psqbin binary.
+			</longdesc>
+			<shortdesc lang="en">psql</shortdesc>
+			<content type="string"/>
+		</parameter>
+
+		<parameter name="pgctl" unique="0" required="0">
+			<longdesc lang="en">
+			Path to pg_ctl command.
+			</longdesc>
+			<shortdesc lang="en">pgctl</shortdesc>
+			<content type="string" default="/usr/bin/pg_ctl" />
+		</parameter>
+
+		<parameter name="pgpidfile" unique="0" required="1">
+			<longdesc lang="en">
+			PID file of the local PostgreSQL instance
+			</longdesc>
+			<shortdesc lang="en">pgpidfile</shortdesc>
+			<content type="string"/>
+		</parameter>
+
+		<parameter name ="pgdata" unique="0" required="1">
+			<longdesc lang="en">
+			Local PGDATA directory (local PostgreSQL instance)
+			</longdesc>
+			<shortdesc>pgdata</shortdesc>
+			<content type="string"/>
+		</parameter>
+
+		<parameter name ="resowner" unique="0" required="0">
+			<longdesc lang="en">
+			Resource owner (system shell user) of this agent (default 'postgres')
+			</longdesc>
+			<shortdesc>resowner</shortdesc>
+			<content type="string"/>
+		</parameter>
+	</parameters>
+
+	<actions>
+		<action name="start" timeout="20" />
+		<action name="stop"  timeout="20" />
+		<action name="reload"  timeout="20" />
+		<action name="promote" timeout="40" />
+		<action name="demote" timeout="43200" />
+		<action name="meta-data" timeout="5" />
+		<action name="monitor" timeout="40" />
+		<action name="notify" timeout="60" />
+	</actions>
+
+</resource-agent>
+EOF
+
+	exit $OCF_SUCCESS
+}
+
+pgstreamrep_methods() {
+    cat <<EOF
+    start
+    stop
+    status
+    demote
+    promote
+    monitor
+    notify
+    methods
+    meta-data
+    validate-all
+EOF
+    return $OCF_SUCCESS
+}
+
+##
+## default parameters (debian and postgresql 9.0 specific!)
+##
+: ${OCF_RESKEY_pgctl=/usr/lib/postgresql/9.0/bin/pg_ctl}
+: ${OCF_RESKEY_psql=/usr/bin/psql}
+: ${OCF_RESKEY_pgdata=/var/lib/postgresql/9.0/main}
+: ${OCF_RESKEY_resowner=postgres}
+: ${OCF_RESKEY_pidfile=$OCF_RESKEY_pgdata/postmaster.pid}
+: ${OCF_RESKEY_start_opt="-c config_file=/etc/postgresql/9.0/main/postgresql.conf"}
+: ${OCF_RESKEY_logfile="/var/log/postgresql/postgresql-9.0-main.log"}
+
+
+##
+## internal variables
+##
+PSQLCMD="$OCF_RESKEY_psql -v ON_ERROR_STOP=1 -U $OCF_RESKEY_resowner -d $OCF_RESKEY_resowner -qXtnA"
+if [[ ! -z $OCF_RESKEY_primary_port ]]; then
+    PSQLCMD="$PSQLCMD -p $OCF_RESKEY_primary_port -c"
+else
+    PSQLCMD="$PSQLCMD -c"
+fi
+
+##
+## internal functions
+##
+
+# run a command as resowner user
+runasowner() {
+	cd $OCF_RESKEY_pgdata; su $OCF_RESKEY_resowner -c "$*"
+}
+
+# get status information of the local PostgreSQL instance
+pgstreamrep_get_status() {
+	ocf_log debug "pid file in $OCF_RESKEY_pidfile"
+	if [ ! -f $OCF_RESKEY_pidfile ]
+	then
+	ocf_log debug "$RESOURCE pidfile $PIDFILE does not exist"
+		# No PID file
+	return $OCF_NOT_RUNNING
+	fi
+
+	OUTPUT=$(runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} status)
+	RC=$?
+	ocf_log debug $OUTPUT
+	if [[ $RC -ne 0 ]]; then
+		return $OCF_NOT_RUNNING
+	else
+		return $OCF_SUCCESS
+	fi
+}
+
+##
+## Checks whether the current PostgreSQL node is running
+## as a primary or hot standby instance
+##
+pgstreamrep_set_status_variables() {
+
+	PG_ROLE=Unconfigured
+
+	STATUS=$(runasowner "$PSQLCMD 'SELECT pg_is_in_recovery();'")
+
+	## if psql didn't succeed, we need to check whether the instance is
+	## actually running..
+
+	case $? in
+
+	1) ocf_log warn "psql fatal: $STATUS"; return;;
+	2) ocf_log warn "psql bad conn: $STATUS"; return;;
+	3) ocf_log warn "psql script err: $STATUS"; return;;
+	*) ## fall through
+	esac
+
+	if [[ "$STATUS" = 'f' ]]; then
+		PG_ROLE="Master"
+	elif [[ "$STATUS" = 't' ]]; then
+		PG_ROLE="Slave"
+	else
+		ocf_log err "psql unexpected status: $STATUS"
+	fi
+}
+
+
+##
+## Pacemaker API functions
+##
+pgstreamrep_status() {
+	pgstreamrep_set_status_variables
+	pgstreamrep_get_status
+	RC=$?
+	ocf_log info "STATUS: $RC ROLE: $PG_ROLE"
+	return $RC
+}
+
+pgstreamrep_monitor() {
+	pgstreamrep_get_status
+	RC=$?
+	ocf_log info "MONITOR: $RC"
+	return $RC
+}
+
+pgstreamrep_start() {
+	ocf_log	info "START: starting PostgreSQL instance"
+
+	ocf_log debug "runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -l ${OCF_RESKEY_logfile} -o \"$OCF_RESKEY_start_opt\" start"
+	OUTPUT=$(runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -l ${OCF_RESKEY_logfile} -o \"$OCF_RESKEY_start_opt\" start)
+	RC=$?
+	ocf_log	debug "$OUTPUT"
+
+	if [[ $RC -ne 0 ]]; then
+		ocf_log error "START: failed: RC=$RC: $OUTPUT"
+		return $RC
+	fi
+
+	while :
+	do
+		pgstreamrep_get_status
+		RC=$?
+		if [ $RC -eq 0 ]; then
+			break;
+		fi
+		sleep 1
+		ocf_log debug "PostgreSQL still hasn't started yet. Waiting..."
+	done
+	ocf_log info "PostgreSQL is started."
+
+	return $OCF_SUSCESS
+}
+
+pgstreamrep_stop() {
+	ocf_log info "STOP: stopping PostgresQL instance"
+
+	OUTPUT=$(runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -m fast stop 2>&1)
+	RC=$?
+	ocf_log debug "$OUTPUT"
+
+	if [[ $RC -ne 0 ]]; then
+		ocf_log error "STOP: failed: RC=$RC: $OUTPUT"
+		return $RC
+	fi
+
+	return $OCF_SUCCESS
+}
+
+pgstreamrep_promote() {
+	ocf_log info "PROMOTE:"
+	return $OCF_SUCCESS
+}
+
+pgstreamrep_demote() {
+	ocf_log info "DEMOTE:"
+	pgstreamrep_set_status_variables
+	pgstreamrep_get_status
+
+	return $OCF_SUCCESS
+}
+
+pgstreamrep_notify() {
+
+	## initial variables, required to process notification request
+	local ACTION_TYPE=${OCF_RESKEY_CRM_meta_notify_type}
+	local ACTION_OP=${OCF_RESKEY_CRM_meta_notify_operation}
+	local ME=$(uname -n)
+
+	ocf_log info "NOTIFY:"
+	return $OCF_SUCCESS
+}
+
+pgstreamrep_validate_all() {
+	ocf_log	info "VALIDATE_ALL:"
+	return $OCF_SUCCESS
+}
+
+# which method was invoked?
+case "$1" in
+	methods)    pgstreamrep_methods
+				exit $?;;
+	meta-data)  meta_data
+				exit $?;;
+	validate-all)  pgstreamrep_validate_all
+				exit $?;;
+	status)     pgstreamrep_status
+				exit $?;;
+	monitor)    pgstreamrep_monitor
+				exit $?;;
+	start)      pgstreamrep_start
+				exit $?;;
+	stop)       pgstreamrep_stop
+				exit $?;;
+	promote)    pgstreamrep_promote
+				exit $?;;
+	demote)     pgstreamrep_demote
+				exit $?;;
+	notify)     pgstreamrep_notify
+				exit $?;;
+	*)
+				usage
+				exit $OCF_ERR_UNIMPLEMENTED;;
+esac
+
