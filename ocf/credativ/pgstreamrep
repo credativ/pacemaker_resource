@@ -166,16 +166,19 @@ EOF
 : ${OCF_RESKEY_logfile="/var/log/postgresql/postgresql-9.0-main.log"}
 : ${OCF_RESKEY_logfile="/var/run/postgresql/become_master"}
 
-
 ##
 ## internal variables
 ##
 PSQLCMD="$OCF_RESKEY_psql -v ON_ERROR_STOP=1 -U $OCF_RESKEY_resowner -d $OCF_RESKEY_resowner -qXtnA"
 if [[ ! -z $OCF_RESKEY_primary_port ]]; then
-    PSQLCMD="$PSQLCMD -p $OCF_RESKEY_primary_port -c"
+	PSQLCMD="$PSQLCMD -p $OCF_RESKEY_primary_port -c"
 else
-    PSQLCMD="$PSQLCMD -c"
+	PSQLCMD="$PSQLCMD -c"
 fi
+CRM_MASTER="${HA_SBIN_DIR}/crm_master -l reboot "
+
+MASTER_SCORE=1000
+SLAVE_SCORE=100
 
 ##
 ## internal functions
@@ -184,6 +187,12 @@ fi
 # run a command as resowner user
 runasowner() {
 	cd $OCF_RESKEY_pgdata; su $OCF_RESKEY_resowner -c "$*"
+}
+
+# moderate preference (adjust pacemaker score)
+modpref() {
+	$CRM_MASTER $*
+	return $?
 }
 
 # get status information of the local PostgreSQL instance
@@ -232,7 +241,7 @@ pgstreamrep_set_status_variables() {
 	elif [[ "$STATUS" = 't' ]]; then
 		PG_ROLE="Slave"
 	else
-		ocf_log err "psql unexpected status: $STATUS"
+		ocf_log error "psql unexpected status: $STATUS"
 	fi
 }
 
@@ -253,6 +262,12 @@ pgstreamrep_monitor() {
 	pgstreamrep_get_status
 	RC=$?
 	ocf_log info "MONITOR: RC=$RC ROLE=$PG_ROLE"
+
+	case $PG_ROLE in
+		Master) modpref -v $MASTER_SCORE ;;
+		Slave) modpref -v $SLAVE_SCORE ;;
+	esac
+
 	return $RC
 }
 
@@ -319,6 +334,7 @@ pgstreamrep_promote() {
 
 	if [[ "$PG_ROLE" = "Master" ]]; then
 		ocf_log info "PostgresSQL is already Master"
+		modpref -v $MASTER_SCORE
 		return $OCF_SUCESS
 	fi
 
@@ -345,6 +361,7 @@ pgstreamrep_promote() {
 		ocf_log debug "PostgreSQL still has role:$PG_ROLE. Waiting..."
 	done
 	ocf_log info "PostgreSQL instance has been promoted."
+	modpref -v $MASTER_SCORE
 
 #	pgrepmgr_modpref -v ${SLAVE_SCORE}
 #	return $?
