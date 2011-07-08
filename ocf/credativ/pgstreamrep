@@ -356,6 +356,21 @@ pgstreamrep_demote() {
 	ocf_log info "DEMOTE:"
 	pgstreamrep_set_status_variables
 	pgstreamrep_get_status
+	RC=$?
+	if [[ $RC -ne $OCF_SUCCESS ]]; then
+		ocf_log info "PostgreSQL not running"
+		return $OCF_NOT_RUNNING
+	fi
+
+	if [ "$PG_ROLE" = "Slave" ]; then
+		ocf_log info "PostgreSQL is already $PG_ROLE"
+		return $OCF_SUCCESS
+	fi
+
+	if [ "$PG_ROLE" = "Master" ]; then
+		ocf_log error "PostgresSQL is $PG_ROLE demoting not supported."
+		return $OCF_ERR_GENERIC
+	fi
 
 	return $OCF_SUCCESS
 }
@@ -367,7 +382,7 @@ pgstreamrep_notify() {
 	local ACTION_OP=${OCF_RESKEY_CRM_meta_notify_operation}
 	local ME=$(uname -n)
 
-	ocf_log info "NOTIFY:"
+	ocf_log info "NOTIFY: me=$ME action_type=$ACTION_TYPE action_op=$ACTION_OP"
 	return $OCF_SUCCESS
 }
 
