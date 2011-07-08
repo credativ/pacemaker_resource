@@ -110,6 +110,15 @@ cat <<EOF
 			<content type="string" default="/dev/null" />
 		</parameter>
 
+		<parameter name="trigger_file" unique="0" required="1">
+			<longdesc lang="en">
+				Path to the trigger_file configured in the recovery.conf
+				of the hot-standby.
+			</longdesc>
+			<shortdesc lang="en">logfile</shortdesc>
+			<content type="string" default="/var/run/postgresql/become_master" />
+		</parameter>
+
 	</parameters>
 
 	<actions>
@@ -155,6 +164,7 @@ EOF
 : ${OCF_RESKEY_pidfile=$OCF_RESKEY_pgdata/postmaster.pid}
 : ${OCF_RESKEY_start_opt="-c config_file=/etc/postgresql/9.0/main/postgresql.conf"}
 : ${OCF_RESKEY_logfile="/var/log/postgresql/postgresql-9.0-main.log"}
+: ${OCF_RESKEY_logfile="/var/run/postgresql/become_master"}
 
 
 ##
@@ -234,14 +244,15 @@ pgstreamrep_status() {
 	pgstreamrep_set_status_variables
 	pgstreamrep_get_status
 	RC=$?
-	ocf_log info "STATUS: $RC ROLE: $PG_ROLE"
+	ocf_log info "STATUS: RC=$RC ROLE=$PG_ROLE"
 	return $RC
 }
 
 pgstreamrep_monitor() {
+	pgstreamrep_set_status_variables
 	pgstreamrep_get_status
 	RC=$?
-	ocf_log info "MONITOR: $RC"
+	ocf_log info "MONITOR: RC=$RC ROLE=$PG_ROLE"
 	return $RC
 }
 
@@ -296,7 +307,48 @@ pgstreamrep_stop() {
 }
 
 pgstreamrep_promote() {
-	ocf_log info "PROMOTE:"
+	ocf_log info "$RESOURCE PROMOTE: promoting"
+	pgstreamrep_set_status_variables
+	pgstreamrep_get_status
+	RC=$?
+
+	if [[ $RC -ne $OCF_SUCCESS ]]; then
+		ocf_log info "PostgreSQL not running"
+		return $OCF_NOT_RUNNING
+	fi
+
+	if [[ "$PG_ROLE" = "Master" ]]; then
+		ocf_log info "PostgresSQL is already Master"
+		return $OCF_SUCESS
+	fi
+
+	if [[ $PG_ROLE != "Slave" ]]; then
+		ocf_log error "PostgresSQL in unexpected role: $PG_ROLE"
+		return $OCF_ERR_GENERIC
+	fi
+
+	## Exit recovery
+	touch $OCF_RESKEY_trigger_file
+	RC=$?
+	if [[ $RC -ne 0 ]]; then
+		ocf_log error "Failed to create $OCF_RESKEY_trigger_file"
+		return $OCF_ERR_GENERIC
+	fi
+
+	while :
+	do
+		pgstreamrep_set_status_variables
+		if [ "$PG_ROLE" = "Master" ]; then
+			break;
+		fi
+		sleep 1
+		ocf_log debug "PostgreSQL still has role:$PG_ROLE. Waiting..."
+	done
+	ocf_log info "PostgreSQL instance has been promoted."
+
+#	pgrepmgr_modpref -v ${SLAVE_SCORE}
+#	return $?
+
 	return $OCF_SUCCESS
 }
 
