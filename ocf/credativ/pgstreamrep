@@ -99,8 +99,17 @@ cat <<EOF
 			Resource owner (system shell user) of this agent (default 'postgres')
 			</longdesc>
 			<shortdesc>resowner</shortdesc>
-			<content type="string"/>
+			<content type="string" default="postgres" />
 		</parameter>
+
+		<parameter name="logfile" unique="0" required="0">
+			<longdesc lang="en">
+				Path to PostgreSQL server log output file.
+			</longdesc>
+			<shortdesc lang="en">logfile</shortdesc>
+			<content type="string" default="/dev/null" />
+		</parameter>
+
 	</parameters>
 
 	<actions>
@@ -239,7 +248,7 @@ pgstreamrep_monitor() {
 pgstreamrep_start() {
 	ocf_log	info "START: starting PostgreSQL instance"
 
-	ocf_log debug "runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -l ${OCF_RESKEY_logfile} -o \"$OCF_RESKEY_start_opt\" start"
+	ocf_log info "runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -l ${OCF_RESKEY_logfile} -o \"$OCF_RESKEY_start_opt\" start"
 	OUTPUT=$(runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -l ${OCF_RESKEY_logfile} -o \"$OCF_RESKEY_start_opt\" start)
 	RC=$?
 	ocf_log	debug "$OUTPUT"
@@ -266,6 +275,13 @@ pgstreamrep_start() {
 
 pgstreamrep_stop() {
 	ocf_log info "STOP: stopping PostgresQL instance"
+	pgstreamrep_get_status
+	RC=$?
+
+	if [[ $RC -ne 0 ]]; then
+		ocf_log warn "STOP: PostgreSQL already stopped"
+		return $OCF_SUCCESS
+	fi
 
 	OUTPUT=$(runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -m fast stop 2>&1)
 	RC=$?
