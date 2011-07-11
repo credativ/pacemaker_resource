@@ -17,7 +17,7 @@
 #     OCF_RESKEY_pgctl             - Full path to pg_ctl binary of the local PostgreSQL instance
 #     OCF_RESKEY_psql	           - psql binary location (full path)
 #     OCF_RESKEY_resowner          - Resource owner (default 'postgres')
-#	  OCF_RESKEY_logfile		   - Path to PostgresSQL log file
+#	  OCF_RESKEY_logfile		   - Path to PostgreSQL log file
 #	  OCF_RESKEY_trigger_file	   - Path of the trigger file in revovery.conf
 #	  OCF_RESKEY_master_addr	   - IP Address to check if a Master is already running
 #	  OCF_RESKEY_master_port	   - Port to check if a Master is already running
@@ -193,6 +193,7 @@ if [[ ! -z $OCF_RESKEY_primary_port ]]; then
 else
 	PSQLCMD="$PSQLCMD -c"
 fi
+
 CRM_MASTER="${HA_SBIN_DIR}/crm_master -l reboot "
 
 MASTER_SCORE=1000
@@ -240,11 +241,9 @@ pgstreamrep_get_status() {
 pgstreamrep_set_status_variables() {
 
 	PG_ROLE=Unconfigured
+	PG_XLOG=Unknown
 
-	STATUS=$(runasowner "$PSQLCMD 'SELECT pg_is_in_recovery();'")
-
-	## if psql didn't succeed, we need to check whether the instance is
-	## actually running..
+	STATUS=$(runasowner "$PSQLCMD 'SELECT pg_is_in_recovery();'" 2>&1)
 
 	case $? in
 
@@ -256,11 +255,23 @@ pgstreamrep_set_status_variables() {
 
 	if [[ "$STATUS" = 'f' ]]; then
 		PG_ROLE="Master"
+		OUT=$(runasowner "$PSQLCMD 'SELECT pg_current_xlog_location();'")
+		RC=$?
 	elif [[ "$STATUS" = 't' ]]; then
 		PG_ROLE="Slave"
+		OUT=$(runasowner "$PSQLCMD 'SELECT pg_last_xlog_replay_location();'")
+		RC=$?
 	else
 		ocf_log error "psql unexpected status: $STATUS"
 	fi
+
+	if [[ $RC -eq 0 ]]; then
+		PG_XLOG=$OUT
+	else
+		PG_XLOG=Unknown
+	fi
+
+	return $OCF_
 }
 
 
@@ -271,7 +282,7 @@ pgstreamrep_status() {
 	pgstreamrep_set_status_variables
 	pgstreamrep_get_status
 	RC=$?
-	ocf_log info "STATUS: RC=$RC ROLE=$PG_ROLE"
+	ocf_log info "STATUS: rc=$RC role=$PG_ROLE xlog=$PG_XLOG"
 	return $RC
 }
 
@@ -279,7 +290,7 @@ pgstreamrep_monitor() {
 	pgstreamrep_set_status_variables
 	pgstreamrep_get_status
 	RC=$?
-	ocf_log info "MONITOR: RC=$RC ROLE=$PG_ROLE"
+	ocf_log info "MONITOR: rc=$RC role=$PG_ROLE xlog=$PG_XLOG"
 
 	case $PG_ROLE in
 		Master) modpref -v $MASTER_SCORE ;;
@@ -371,13 +382,13 @@ pgstreamrep_promote() {
 	fi
 
 	if [[ "$PG_ROLE" = "Master" ]]; then
-		ocf_log info "PostgresSQL is already Master"
+		ocf_log info "PostgreSQL is already Master"
 		modpref -v $MASTER_SCORE
 		return $OCF_SUCESS
 	fi
 
 	if [[ $PG_ROLE != "Slave" ]]; then
-		ocf_log error "PostgresSQL in unexpected role: $PG_ROLE"
+		ocf_log error "PostgreSQL in unexpected role: $PG_ROLE"
 		return $OCF_ERR_GENERIC
 	fi
 
@@ -425,7 +436,7 @@ pgstreamrep_demote() {
 
 	if [ "$PG_ROLE" = "Master" ]; then
 		modpref -v $SLAVE_SCORE
-		ocf_log error "PostgresSQL is $PG_ROLE: demoting not supported."
+		ocf_log error "PostgreSQL is $PG_ROLE: demoting not supported."
 		return $OCF_ERR_GENERIC
 	fi
 
