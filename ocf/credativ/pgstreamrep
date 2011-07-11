@@ -304,6 +304,12 @@ pgstreamrep_start() {
 			modpref -v $SLAVE_SCORE
 			return $OCF_ERR_GENERIC
 		fi
+
+		# we are going to start up as master, make sure we get promoted
+		modpref -v $MASTER_SCORE
+	else
+		# we are going to start up as hot standby, adjust preference so we do not get promoted needlessly
+		modpref -v $SLAVE_SCORE
 	fi
 
 	ocf_log info "runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -l ${OCF_RESKEY_logfile} -o \"$OCF_RESKEY_start_opt\" start"
@@ -413,15 +419,19 @@ pgstreamrep_demote() {
 
 	if [ "$PG_ROLE" = "Slave" ]; then
 		ocf_log info "PostgreSQL is already $PG_ROLE"
+		modpref -v $SLAVE_SCORE
 		return $OCF_SUCCESS
 	fi
 
 	if [ "$PG_ROLE" = "Master" ]; then
+		modpref -v $SLAVE_SCORE
 		ocf_log error "PostgresSQL is $PG_ROLE: demoting not supported."
 		return $OCF_ERR_GENERIC
 	fi
 
-	return $OCF_SUCCESS
+	ocf_log error "PostgreSQL is in unknown state: $PG_ROLE"
+
+	return $OCF_ERR_GENERUC
 }
 
 pgstreamrep_notify() {
