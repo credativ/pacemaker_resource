@@ -19,6 +19,8 @@
 #     OCF_RESKEY_resowner          - Resource owner (default 'postgres')
 #	  OCF_RESKEY_logfile		   - Path to PostgresSQL log file
 #	  OCF_RESKEY_trigger_file	   - Path of the trigger file in revovery.conf
+#	  OCF_RESKEY_master_addr	   - IP Address to check if a Master is already running
+#	  OCF_RESKEY_master_port	   - Port to check if a Master is already running
 
 
 OCF_ROOT=/usr/lib/ocf
@@ -78,7 +80,7 @@ cat <<EOF
 			<content type="string" default="/usr/bin/pg_ctl" />
 		</parameter>
 
-		<parameter name="pgpidfile" unique="0" required="1">
+		<parameter name="pgpidfile" unique="1" required="1">
 			<longdesc lang="en">
 			PID file of the local PostgreSQL instance
 			</longdesc>
@@ -86,7 +88,7 @@ cat <<EOF
 			<content type="string"/>
 		</parameter>
 
-		<parameter name ="pgdata" unique="0" required="1">
+		<parameter name ="pgdata" unique="1" required="1">
 			<longdesc lang="en">
 			Local PGDATA directory (local PostgreSQL instance)
 			</longdesc>
@@ -110,13 +112,29 @@ cat <<EOF
 			<content type="string" default="/dev/null" />
 		</parameter>
 
-		<parameter name="trigger_file" unique="0" required="1">
+		<parameter name="trigger_file" unique="1" required="1">
 			<longdesc lang="en">
 				Path to the trigger_file configured in the recovery.conf
 				of the hot-standby.
 			</longdesc>
 			<shortdesc lang="en">logfile</shortdesc>
 			<content type="string" default="/var/run/postgresql/become_master" />
+		</parameter>
+
+		<parameter name="master_addr" unique="0" required="1">
+			<longdesc lang="en">
+				IP Address to check if a master is already running.
+			</longdesc>
+			<shortdesc lang="en">Master IP Address</shortdesc>
+			<content type="string"/>
+		</parameter>
+
+		<parameter name="master_port" unique="0" required="1">
+			<longdesc lang="en">
+				Port Number to check if a master is already running.
+			</longdesc>
+			<shortdesc lang="en">Master Port Number</shortdesc>
+			<content type="string"/>
 		</parameter>
 
 	</parameters>
@@ -200,7 +218,7 @@ pgstreamrep_get_status() {
 	ocf_log debug "pid file in $OCF_RESKEY_pidfile"
 	if [ ! -f $OCF_RESKEY_pidfile ]
 	then
-	ocf_log debug "$RESOURCE pidfile $PIDFILE does not exist"
+	ocf_log debug "pidfile $PIDFILE does not exist"
 		# No PID file
 	return $OCF_NOT_RUNNING
 	fi
@@ -274,6 +292,20 @@ pgstreamrep_monitor() {
 pgstreamrep_start() {
 	ocf_log	info "START: starting PostgreSQL instance"
 
+	# check if we would start up as master
+	if [[ ! -f ${OCF_RESKEY_pgdata}/recovery.conf ]]; then
+		ocf_log info "No recovery.conf found make sure there is really no other Master running..."
+		ocf_log info nc -q0 -w3 ${OCF_RESKEY_master_addr} ${OCF_RESKEY_master_port}
+		OUT=$(nc -q0 -w3 ${OCF_RESKEY_master_addr} ${OCF_RESKEY_master_port} < /dev/null 2>&1)
+		RC=$?
+		ocf_log info "connection test returned RC=$RC OUT=$OUT"
+		if [[ $RC -eq 0 ]]; then
+			ocf_log error "There is already Master instance running at ${OCF_RESKEY_master_addr}:${OCF_RESKEY_master_port}, aborting startup"
+			modpref -v $SLAVE_SCORE
+			return $OCF_ERR_GENERIC
+		fi
+	fi
+
 	ocf_log info "runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -l ${OCF_RESKEY_logfile} -o \"$OCF_RESKEY_start_opt\" start"
 	OUTPUT=$(runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -l ${OCF_RESKEY_logfile} -o \"$OCF_RESKEY_start_opt\" start)
 	RC=$?
@@ -322,7 +354,7 @@ pgstreamrep_stop() {
 }
 
 pgstreamrep_promote() {
-	ocf_log info "$RESOURCE PROMOTE: promoting"
+	ocf_log info "PROMOTE: promoting"
 	pgstreamrep_set_status_variables
 	pgstreamrep_get_status
 	RC=$?
@@ -385,7 +417,7 @@ pgstreamrep_demote() {
 	fi
 
 	if [ "$PG_ROLE" = "Master" ]; then
-		ocf_log error "PostgresSQL is $PG_ROLE demoting not supported."
+		ocf_log error "PostgresSQL is $PG_ROLE: demoting not supported."
 		return $OCF_ERR_GENERIC
 	fi
 
@@ -398,8 +430,9 @@ pgstreamrep_notify() {
 	local ACTION_TYPE=${OCF_RESKEY_CRM_meta_notify_type}
 	local ACTION_OP=${OCF_RESKEY_CRM_meta_notify_operation}
 	local ME=$(uname -n)
+	local MASTER=${OCF_RESKEY_CRM_meta_notify_master_uname}
 
-	ocf_log info "NOTIFY: me=$ME action_type=$ACTION_TYPE action_op=$ACTION_OP"
+	ocf_log info "NOTIFY: me=$ME master=$MASTER action_type=$ACTION_TYPE action_op=$ACTION_OP"
 	return $OCF_SUCCESS
 }
 
