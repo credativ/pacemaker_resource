@@ -271,7 +271,7 @@ pgstreamrep_set_status_variables() {
 		PG_XLOG=Unknown
 	fi
 
-	return $OCF_
+	return $OCF_SUCCESS
 }
 
 
