@@ -7,7 +7,7 @@
 RESOURCE_NAME=pgInstance:1
 CRM_RESOURCE="/usr/sbin/crm_resource"
 
-if [ "$(crm_resource -r pgInstance:1 --locate -Q 2>/dev/null)" = "$(uname -n)" ]; then
+if [ "$(CRM_RESOURCE -r pgInstance:1 --locate -Q 2>/dev/null)" = "$(uname -n)" ]; then
 	exit 0;
 else
 	exit 1;
