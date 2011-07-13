@@ -182,7 +182,7 @@ EOF
 : ${OCF_RESKEY_pidfile=$OCF_RESKEY_pgdata/postmaster.pid}
 : ${OCF_RESKEY_start_opt="-c config_file=/etc/postgresql/9.0/main/postgresql.conf"}
 : ${OCF_RESKEY_logfile="/var/log/postgresql/postgresql-9.0-main.log"}
-: ${OCF_RESKEY_logfile="/var/run/postgresql/become_master"}
+: ${OCF_RESKEY_trigger_file="/var/run/postgresql/become_master"}
 
 ##
 ## internal variables
