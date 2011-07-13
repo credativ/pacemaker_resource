@@ -22,19 +22,19 @@
 #	  OCF_RESKEY_master_addr	   - IP Address to check if a Master is already running
 #	  OCF_RESKEY_master_port	   - Port to check if a Master is already running
 
+#set -e
 
 OCF_ROOT=/usr/lib/ocf
 : ${OCF_FUNCTIONS_DIR=${OCF_ROOT}/resource.d/heartbeat}
 . ${OCF_FUNCTIONS_DIR}/.ocf-shellfuncs
 
-unset LC_ALL; export LC_ALL
-unset LANGUAGE; export LANGUAGE
+unset LC_ALL LANG LANGUAGE
 
 usage() {
 
     cat<<EOF
 
-    usage: $0 start|stop|status|monitor|meta-data|validate-all|methods
+    usage: $0 start|stop|status|monitor|promote|demote|meta-data|validate-all|methods
 
     $0 manages a PostgreSQL Server as an HA resource.
 
@@ -45,6 +45,7 @@ usage() {
          The 'promote' operation delegates primary role to the PostgreSQL instance
          The 'demote' operation makes a PostgreSQL instance to a standby
          The 'validate-all' operation reports whether the parameters are valid.
+         The 'meta-data' operation describes the OCF parameters supported in xml format.
          The 'methods' operation reports on the methods $0 supports.
 
 EOF
@@ -187,12 +188,7 @@ EOF
 ##
 ## internal variables
 ##
-PSQLCMD="$OCF_RESKEY_psql -v ON_ERROR_STOP=1 -U $OCF_RESKEY_resowner -d $OCF_RESKEY_resowner -qXtnA"
-if [[ ! -z $OCF_RESKEY_primary_port ]]; then
-	PSQLCMD="$PSQLCMD -p $OCF_RESKEY_primary_port -c"
-else
-	PSQLCMD="$PSQLCMD -c"
-fi
+PSQLCMD="$OCF_RESKEY_psql -v ON_ERROR_STOP=1 -U $OCF_RESKEY_resowner -d $OCF_RESKEY_resowner -qXtnA ${OCF_RESKEY_master_port:+-p $OCF_RESKEY_master_port} -c"
 
 CRM_MASTER="${HA_SBIN_DIR}/crm_master -l reboot "
 
@@ -205,7 +201,7 @@ SLAVE_SCORE=100
 
 # run a command as resowner user
 runasowner() {
-	cd $OCF_RESKEY_pgdata; su $OCF_RESKEY_resowner -c "$*"
+	( cd $OCF_RESKEY_pgdata; su $OCF_RESKEY_resowner -c "$*" )
 }
 
 # moderate preference (adjust pacemaker score)
@@ -221,7 +217,7 @@ pgstreamrep_get_status() {
 	then
 	ocf_log debug "pidfile $PIDFILE does not exist"
 		# No PID file
-	return $OCF_NOT_RUNNING
+		return $OCF_NOT_RUNNING
 	fi
 
 	OUTPUT=$(runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} status)
@@ -267,8 +263,6 @@ pgstreamrep_set_status_variables() {
 
 	if [[ $RC -eq 0 ]]; then
 		PG_XLOG=$OUT
-	else
-		PG_XLOG=Unknown
 	fi
 
 	return $OCF_SUCCESS
@@ -301,11 +295,12 @@ pgstreamrep_monitor() {
 }
 
 pgstreamrep_start() {
-	ocf_log	info "START: starting PostgreSQL instance"
+	ocf_log info "START: starting PostgreSQL instance"
 
 	# check if we would start up as master
 	if [[ ! -f ${OCF_RESKEY_pgdata}/recovery.conf ]]; then
-		ocf_log info "No recovery.conf found make sure there is really no other Master running..."
+		ocf_log info "No recovery.conf found, making sure there is really no other Master running..."
+
 		ocf_log info nc -q0 -w3 ${OCF_RESKEY_master_addr} ${OCF_RESKEY_master_port}
 		OUT=$(nc -q0 -w3 ${OCF_RESKEY_master_addr} ${OCF_RESKEY_master_port} < /dev/null 2>&1)
 		RC=$?
@@ -333,7 +328,7 @@ pgstreamrep_start() {
 	ocf_log info "runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -l ${OCF_RESKEY_logfile} -o \"$OCF_RESKEY_start_opt\" start"
 	OUTPUT=$(runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -l ${OCF_RESKEY_logfile} -o \"$OCF_RESKEY_start_opt\" start)
 	RC=$?
-	ocf_log	debug "$OUTPUT"
+	ocf_log debug "$OUTPUT"
 
 	if [[ $RC -ne 0 ]]; then
 		ocf_log error "START: failed: RC=$RC: $OUTPUT"
@@ -465,12 +460,12 @@ pgstreamrep_notify() {
 }
 
 pgstreamrep_validate_all() {
-	ocf_log	info "VALIDATE_ALL:"
+	ocf_log info "VALIDATE_ALL:"
 	return $OCF_SUCCESS
 }
 
 # which method was invoked?
-case "$1" in
+case ${1:-} in
 	methods)    pgstreamrep_methods
 				exit $?;;
 	meta-data)  meta_data
