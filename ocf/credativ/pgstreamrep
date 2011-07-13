@@ -66,7 +66,7 @@ cat <<EOF
 	<parameters>
 		<parameter name="psql" unique="0" required="0">
 			<longdesc lang="en">
-			Location (full path) of the psqbin binary.
+			Location (full path) of the psql binary.
 			</longdesc>
 			<shortdesc lang="en">psql</shortdesc>
 			<content type="string"/>
@@ -80,7 +80,7 @@ cat <<EOF
 			<content type="string" default="/usr/bin/pg_ctl" />
 		</parameter>
 
-		<parameter name="pgpidfile" unique="1" required="1">
+		<parameter name="pgpidfile" unique="1" required="0">
 			<longdesc lang="en">
 			PID file of the local PostgreSQL instance
 			</longdesc>
@@ -88,7 +88,7 @@ cat <<EOF
 			<content type="string"/>
 		</parameter>
 
-		<parameter name ="pgdata" unique="1" required="1">
+		<parameter name ="pgdata" unique="1" required="0">
 			<longdesc lang="en">
 			Local PGDATA directory (local PostgreSQL instance)
 			</longdesc>
@@ -112,7 +112,7 @@ cat <<EOF
 			<content type="string" default="/dev/null" />
 		</parameter>
 
-		<parameter name="trigger_file" unique="1" required="1">
+		<parameter name="trigger_file" unique="1" required="0">
 			<longdesc lang="en">
 				Path to the trigger_file configured in the recovery.conf
 				of the hot-standby.
@@ -129,7 +129,7 @@ cat <<EOF
 			<content type="string"/>
 		</parameter>
 
-		<parameter name="master_port" unique="0" required="1">
+		<parameter name="master_port" unique="0" required="0">
 			<longdesc lang="en">
 				Port Number to check if a master is already running.
 			</longdesc>
