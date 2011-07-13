@@ -316,6 +316,13 @@ pgstreamrep_start() {
 			return $OCF_ERR_GENERIC
 		fi
 
+		# no "" here, OCF_RESKEY_CRM_meta_notify_master_resource might just be a space :-(
+		if [ $OCF_RESKEY_CRM_meta_notify_master_resource ] && [ $OCF_RESKEY_CRM_meta_notify_master_resource != "$OCF_RESOURCE_INSTANCE" ] ; then
+			ocf_log error "We are instance $OCF_RESOURCE_INSTANCE, but $OCF_RESKEY_CRM_meta_notify_master_resource is already Master, aborting startup"
+			modpref -v $SLAVE_SCORE
+			return $OCF_ERR_GENERIC
+		fi
+
 		# we are going to start up as master, make sure we get promoted
 		modpref -v $MASTER_SCORE
 	else
