@@ -1,0 +1,13 @@
+Source: pgstreamrep
+Section: admin
+Priority: extra
+Maintainer: Alexander Wirt <alexander.wirt@credativ.de>
+Build-Depends: debhelper (>= 8)
+Standards-Version: 3.9.2
+
+Package: pgstreamrep
+Architecture: all
+Depends: ${shlibs:Depends}, ${misc:Depends}, pacemaker (>= 1.0.9~) 
+Description: resource agent for postgres streaming replication
+ this package provides a resource helper for managing
+ postgresql streaming replication via pacemaker
