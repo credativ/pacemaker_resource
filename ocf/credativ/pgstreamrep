@@ -60,7 +60,9 @@ cat <<EOF
 	<version>1.0</version>
 
 	<longdesc lang="en">
-		Resource script for PostgreSQL Streaming Replication Clusters.
+                Resource script for PostgreSQL Streaming Replication Clusters. Most of the
+                default settings are Debian-specific, but can easily overwritten to fit any
+                needs.
 	</longdesc>
 	<shortdesc lang="en">Manages a PostgreSQL Streaming Replication Cluster</shortdesc>
 
@@ -95,6 +97,14 @@ cat <<EOF
 			</longdesc>
 			<shortdesc>pgdata</shortdesc>
 			<content type="string"/>
+		</parameter>
+
+		<parameter name ="start_opt" unique="1" required="0">
+			<longdesc lang="en">
+                        Additional options to be passed to pg_ctl
+			</longdesc>
+			<shortdesc>start_opt</shortdesc>
+			<content type="string" default="-c /etc/postgresql/9.0/main/postgresql.conf" />
 		</parameter>
 
 		<parameter name ="resowner" unique="0" required="0">
