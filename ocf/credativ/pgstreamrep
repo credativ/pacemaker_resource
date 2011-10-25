@@ -104,7 +104,7 @@ cat <<EOF
                         Additional options to be passed to pg_ctl
 			</longdesc>
 			<shortdesc>start_opt</shortdesc>
-			<content type="string" default="-c /etc/postgresql/9.0/main/postgresql.conf" />
+			<content type="string" default="-c config_file=/etc/postgresql/9.0/main/postgresql.conf" />
 		</parameter>
 
 		<parameter name ="resowner" unique="0" required="0">
