@@ -11,16 +11,17 @@
 #
 # OCF parameters:
 #
-#	  OCF_RESKEY_start_opt         - Startup options, options passed to postgress with -o
+#     OCF_RESKEY_start_opt         - Startup options, options passed to postgress with -o
 #     OCF_RESKEY_pgpidfile         - Path to the local PostgreSQL PID file
 #     OCF_RESKEY_pgdata            - Path to the local PGDATA directory
 #     OCF_RESKEY_pgctl             - Full path to pg_ctl binary of the local PostgreSQL instance
+#     OCF_RESKEY_pgctl_timeout     - Wait this number of seconds for pg_ctl to stop the instance
 #     OCF_RESKEY_psql	           - psql binary location (full path)
 #     OCF_RESKEY_resowner          - Resource owner (default 'postgres')
-#	  OCF_RESKEY_logfile		   - Path to PostgreSQL log file
-#	  OCF_RESKEY_trigger_file	   - Path of the trigger file in revovery.conf
-#	  OCF_RESKEY_master_addr	   - IP Address to check if a Master is already running
-#	  OCF_RESKEY_master_port	   - Port to check if a Master is already running
+#     OCF_RESKEY_logfile		   - Path to PostgreSQL log file
+#     OCF_RESKEY_trigger_file	   - Path of the trigger file in revovery.conf
+#     OCF_RESKEY_master_addr	   - IP Address to check if a Master is already running
+#     OCF_RESKEY_master_port	   - Port to check if a Master is already running
 
 #set -e
 
@@ -81,6 +82,14 @@ cat <<EOF
 			</longdesc>
 			<shortdesc lang="en">pgctl</shortdesc>
 			<content type="string" default="/usr/bin/pg_ctl" />
+		</parameter>
+
+		<parameter name="pgctl_timeout" unique="0" required="0">
+			<longdesc lang="en">
+                        Wait this number of seconds for pg_ctl to stop the instance
+			</longdesc>
+			<shortdesc lang="en">pgctl_timeout</shortdesc>
+			<content type="integer" default="/usr/bin/pg_ctl" />
 		</parameter>
 
 		<parameter name="pgpidfile" unique="1" required="0">
@@ -195,6 +204,7 @@ EOF
 : ${OCF_RESKEY_logfile="/var/log/postgresql/postgresql-9.0-main.log"}
 : ${OCF_RESKEY_trigger_file="/var/run/postgresql/become_master"}
 : ${OCF_RESKEY_master_port="5432"}
+: ${OCF_RESKEY_pgctl_timeout=300}
 
 ##
 ## internal variables
@@ -371,7 +381,7 @@ pgstreamrep_stop() {
 		return $OCF_SUCCESS
 	fi
 
-	OUTPUT=$(runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -m fast stop 2>&1)
+	OUTPUT=$(runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -w -t ${OCF_RESKEY_pgctl_timeout} -m fast stop 2>&1)
 	RC=$?
 	ocf_log debug "$OUTPUT"
 
