@@ -1,15 +1,19 @@
-.PHONY=distri
-PROJECT=pgrepmgr
-FILES=ocf/credativ/pgrepmgr
-PGREPMGR_BACKUP_VERSION=0.2
+.PHONY=dist
+FILES=ocf/credativ/pgrepmgr ocf/credativ/pgstreamrep
+RA_RELEASE=0.3
 
-distribution: ${FILES}
-	mkdir -p ${PROJECT}-${PGREPMGR_BACKUP_VERSION}
-	cp -v ${FILES} ${PROJECT}-${PGREPMGR_BACKUP_VERSION}
-	tar -cvjf ${PROJECT}-${PGREPMGR_BACKUP_VERSION}.tar.bz2 ${PROJECT}-${PGREPMGR_BACKUP_VERSION}
-	rm -rf ${PROJECT}-${PGREPMGR_BACKUP_VERSION}
+dist:
+	@echo "Making dist files"
+	@for i in ${FILES}; do \
+		mkdir -p "$$(basename $$i)-${RA_RELEASE}"; \
+		cp $$i "$$(basename $$i)-${RA_RELEASE}"; \
+		tar -cjf "$$(basename $$i)-${RA_RELEASE}.tar.bz2" $$(basename $$i)-${RA_RELEASE}; \
+	done \
 
 clean:
 	rm -f *~
 	rm -f *.*~
-	rm -rf ${PROJECT}-${PGREPMGR_BACKUP_VERSION}.tar.bz2
+	rm -rf *.tar.bz2
+	@for i in ${FILES}; do \
+		rm -rf "$$(basename $$i)"*; \
+	done \
