@@ -5,7 +5,7 @@
 #               streaming replication clusters
 #
 # Author:       Arnd Hannemann (arnd.hannemann@credativ.de)
-#				Based on work of Bernd Helmle (bernd.helmle@credativ.de)
+#		Based on work of Bernd Helmle (bernd.helmle@credativ.de)
 #
 # License:		GNU General Public License (GPL v3)
 #
@@ -73,7 +73,7 @@ cat <<EOF
 			Location (full path) of the psql binary.
 			</longdesc>
 			<shortdesc lang="en">psql</shortdesc>
-			<content type="string"/>
+			<content type="string" default="/usr/bin/pg_ctl" />
 		</parameter>
 
 		<parameter name="pgctl" unique="0" required="0">
@@ -89,7 +89,7 @@ cat <<EOF
                         Wait this number of seconds for pg_ctl to stop the instance
 			</longdesc>
 			<shortdesc lang="en">pgctl_timeout</shortdesc>
-			<content type="integer" default="/usr/bin/pg_ctl" />
+			<content type="integer" default="300" />
 		</parameter>
 
 		<parameter name="pgpidfile" unique="1" required="0">
@@ -97,12 +97,12 @@ cat <<EOF
 			PID file of the local PostgreSQL instance
 			</longdesc>
 			<shortdesc lang="en">pgpidfile</shortdesc>
-			<content type="string"/>
+			<content type="string" default="PGDATA/postmaster.pid"/>
 		</parameter>
 
-		<parameter name ="pgdata" unique="1" required="0">
+		<parameter name ="pgdata" unique="1" required="1">
 			<longdesc lang="en">
-			Local PGDATA directory (local PostgreSQL instance)
+			Local PGDATA directory (local PostgreSQL instance, required)
 			</longdesc>
 			<shortdesc>pgdata</shortdesc>
 			<content type="string"/>
@@ -110,10 +110,13 @@ cat <<EOF
 
 		<parameter name ="start_opt" unique="1" required="0">
 			<longdesc lang="en">
-                        Additional options to be passed to pg_ctl
+Additional options to be passed to postgres via pg_ctl. This is primarily
+intended to pass special configuration values to pg_ctl with -o, e.g 
+start_opt="-c config_file=/etc/postgresql/9.0/main/postgresql.conf" on Debian systems. 
+All options passed to start_opt will automatically wrapped into pg_ctl -o "start_opt".
 			</longdesc>
 			<shortdesc>start_opt</shortdesc>
-			<content type="string" default="-c config_file=/etc/postgresql/9.0/main/postgresql.conf" />
+			<content type="string" default="(empty)" />
 		</parameter>
 
 		<parameter name ="resowner" unique="0" required="0">
@@ -129,7 +132,7 @@ cat <<EOF
 				Path to PostgreSQL server log output file.
 			</longdesc>
 			<shortdesc lang="en">logfile</shortdesc>
-			<content type="string" default="/dev/null" />
+			<content type="string" default="" />
 		</parameter>
 
 		<parameter name="trigger_file" unique="1" required="0">
@@ -138,7 +141,7 @@ cat <<EOF
 				of the hot-standby.
 			</longdesc>
 			<shortdesc lang="en">logfile</shortdesc>
-			<content type="string" default="/var/run/postgresql/become_master" />
+			<content type="string" default="PGDATA/become_master" />
 		</parameter>
 
 		<parameter name="master_addr" unique="0" required="1">
@@ -154,7 +157,7 @@ cat <<EOF
 				Port Number to check if a master is already running.
 			</longdesc>
 			<shortdesc lang="en">Master Port Number</shortdesc>
-			<content type="string"/>
+			<content type="string" default="5432"/>
 		</parameter>
 
 	</parameters>
@@ -193,16 +196,16 @@ EOF
 }
 
 ##
-## default parameters (debian and postgresql 9.0 specific!)
+## default parameters
 ##
-: ${OCF_RESKEY_pgctl=/usr/lib/postgresql/9.0/bin/pg_ctl}
+: ${OCF_RESKEY_pgctl=/usr/bin/pg_ctl}
 : ${OCF_RESKEY_psql=/usr/bin/psql}
-: ${OCF_RESKEY_pgdata=/var/lib/postgresql/9.0/main}
+: ${OCF_RESKEY_pgdata=""}
 : ${OCF_RESKEY_resowner=postgres}
-: ${OCF_RESKEY_pidfile=$OCF_RESKEY_pgdata/postmaster.pid}
-: ${OCF_RESKEY_start_opt="-c config_file=/etc/postgresql/9.0/main/postgresql.conf"}
-: ${OCF_RESKEY_logfile="/var/log/postgresql/postgresql-9.0-main.log"}
-: ${OCF_RESKEY_trigger_file="/var/run/postgresql/become_master"}
+: ${OCF_RESKEY_pgpidfile="${OCF_RESKEY_pgdata}/postmaster.pid"}
+: ${OCF_RESKEY_start_opt=''}
+: ${OCF_RESKEY_logfile=''}
+: ${OCF_RESKEY_trigger_file="${OCF_RESKEY_pgdata}/become_master"}
 : ${OCF_RESKEY_master_port="5432"}
 : ${OCF_RESKEY_pgctl_timeout=300}
 
@@ -233,8 +236,8 @@ modpref() {
 
 # get status information of the local PostgreSQL instance
 pgstreamrep_get_status() {
-	ocf_log debug "pid file in $OCF_RESKEY_pidfile"
-	if [ ! -f $OCF_RESKEY_pidfile ]
+	ocf_log debug "pid file in $OCF_RESKEY_pgpidfile"
+	if [ ! -f $OCF_RESKEY_pgpidfile ]
 	then
 	ocf_log debug "pidfile $PIDFILE does not exist"
 		# No PID file
@@ -315,15 +318,30 @@ pgstreamrep_monitor() {
 	return $RC
 }
 
+## pgstreamrep_check_pgconn()
+## Checks the specified IP and Port for a TCP connection, waits
+## n seconds.
+##
+## usage: pgstreamrep_check_pgconn IP PORT TIMEOUT
+##
+pgstreamrep_check_pgconn() {
+
+    perl -MIO::Socket::INET -e "new IO::Socket::INET( PeerAddr => '$1', PeerPort => '$2', Proto => 'tcp', Timeout => '$3') or exit(1)"
+    return $?
+
+}
+
 pgstreamrep_start() {
+        local PGCTL_REDIRECT_LOGFILE="${OCF_RESKEY_logfile:+-l $OCF_RESKEY_logfile}"
+        local PGCTL_START_OPT="${OCF_RESKEY_start_opt:+-o '$OCF_RESKEY_start_opt'}"
 	ocf_log info "START: starting PostgreSQL instance"
 
 	# check if we would start up as master
 	if [[ ! -f ${OCF_RESKEY_pgdata}/recovery.conf ]]; then
 		ocf_log info "No recovery.conf found, making sure there is really no other Master running..."
 
-		ocf_log info nc -q0 -w3 ${OCF_RESKEY_master_addr} ${OCF_RESKEY_master_port}
-		OUT=$(nc -q0 -w3 ${OCF_RESKEY_master_addr} ${OCF_RESKEY_master_port} < /dev/null 2>&1)
+		ocf_log info pgstreamrep_check_pgconn ${OCF_RESKEY_master_addr} ${OCF_RESKEY_master_port} 5
+		OUT=$(pgstreamrep_check_pgconn ${OCF_RESKEY_master_addr} ${OCF_RESKEY_master_port} 5 < /dev/null 2>&1)
 		RC=$?
 		ocf_log info "connection test returned RC=$RC OUT=$OUT"
 		if [[ $RC -eq 0 ]]; then
@@ -346,10 +364,11 @@ pgstreamrep_start() {
 		modpref -v $SLAVE_SCORE
 	fi
 
-	ocf_log info "runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -l ${OCF_RESKEY_logfile} -o \"$OCF_RESKEY_start_opt\" start"
-	OUTPUT=$(runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} -l ${OCF_RESKEY_logfile} -o \"$OCF_RESKEY_start_opt\" start)
+	ocf_log info "runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} ${PGCTL_REDIRECT_LOGFILE} ${PGCTL_START_OPT} start"
+
+	OUTPUT=$(runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} ${PGCTL_REDIRECT_LOGFILE} ${PGCTL_START_OPT} start)
 	RC=$?
-	ocf_log debug "$OUTPUT"
+	ocf_log info "$OUTPUT"
 
 	if [[ $RC -ne 0 ]]; then
 		ocf_log error "START: failed: RC=$RC: $OUTPUT"
@@ -368,7 +387,7 @@ pgstreamrep_start() {
 	done
 	ocf_log info "PostgreSQL is started."
 
-	return $OCF_SUSCESS
+	return $OCF_SUCCESS
 }
 
 pgstreamrep_stop() {
