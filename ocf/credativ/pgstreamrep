@@ -364,9 +364,9 @@ pgstreamrep_start() {
 		modpref -v $SLAVE_SCORE
 	fi
 
-	ocf_log info "runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} ${PGCTL_REDIRECT_LOGFILE} ${PGCTL_START_OPT} start"
+	ocf_log info "runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} ${PGCTL_REDIRECT_LOGFILE} ${PGCTL_START_OPT} -w -t ${OCF_RESKEY_pgctl_timeout} start"
 
-	OUTPUT=$(runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} ${PGCTL_REDIRECT_LOGFILE} ${PGCTL_START_OPT} start)
+	OUTPUT=$(runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} ${PGCTL_REDIRECT_LOGFILE} ${PGCTL_START_OPT} -w -t ${OCF_RESKEY_pgctl_timeout} start)
 	RC=$?
 	ocf_log info "$OUTPUT"
 
