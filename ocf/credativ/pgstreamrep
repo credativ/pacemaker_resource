@@ -18,7 +18,7 @@
 #     OCF_RESKEY_pgctl_timeout     - Wait this number of seconds for pg_ctl to stop the instance
 #     OCF_RESKEY_psql	           - psql binary location (full path)
 #     OCF_RESKEY_resowner          - Resource owner (default 'postgres')
-#     OCF_RESKEY_logfile		   - Path to PostgreSQL log file
+#     OCF_RESKEY_logfile	   - Path to PostgreSQL log file
 #     OCF_RESKEY_trigger_file	   - Path of the trigger file in revovery.conf
 #     OCF_RESKEY_master_addr	   - IP Address to check if a Master is already running
 #     OCF_RESKEY_master_port	   - Port to check if a Master is already running
@@ -204,7 +204,12 @@ EOF
 : ${OCF_RESKEY_resowner=postgres}
 : ${OCF_RESKEY_pgpidfile="${OCF_RESKEY_pgdata}/postmaster.pid"}
 : ${OCF_RESKEY_start_opt=''}
-: ${OCF_RESKEY_logfile=''}
+
+## Set default logfile location to /dev/null if not
+## specified explicitely. pg_ctl won't detach from STDOUT
+## in case no terminal is assigned.
+: ${OCF_RESKEY_logfile='/dev/null'}
+
 : ${OCF_RESKEY_trigger_file="${OCF_RESKEY_pgdata}/become_master"}
 : ${OCF_RESKEY_master_port="5432"}
 : ${OCF_RESKEY_pgctl_timeout=300}
