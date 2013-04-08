@@ -315,9 +315,19 @@ pgstreamrep_monitor() {
 	RC=$?
 	ocf_log info "MONITOR: rc=$RC role=$PG_ROLE xlog=$PG_XLOG"
 
+    if [ $RC -ne 0 ]; then
+        return $OCF_ERR_GENERIC
+    fi
+
 	case $PG_ROLE in
-		Master) modpref -v $MASTER_SCORE ;;
-		Slave) modpref -v $SLAVE_SCORE ;;
+		Master) 
+            modpref -v $MASTER_SCORE
+            RC=$OCF_RUNNING_MASTER
+            ;;
+		Slave) 
+            modpref -v $SLAVE_SCORE
+            RC=$OCF_SUCCESS
+            ;;
 	esac
 
 	return $RC
