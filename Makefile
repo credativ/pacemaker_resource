@@ -1,5 +1,5 @@
 .PHONY=dist
-FILES=ocf/credativ/pgrepmgr ocf/credativ/pgstreamrep
+FILES=ocf/credativ/pgrepmgr ocf/credativ/pgstreamrep ocf/credativ/LVMactivation
 RA_RELEASE=0.3.6
 
 dist:
