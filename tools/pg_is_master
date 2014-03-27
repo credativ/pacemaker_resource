@@ -4,10 +4,10 @@
 # Checks if we are running the master PostgreSQL instance by querying pacemaker
 #
 
-RESOURCE_NAME=pgInstance:1
+RESOURCE_NAME=masterPgInstance
 CRM_RESOURCE="/usr/sbin/crm_resource"
 
-if [ "$(CRM_RESOURCE -r pgInstance:1 --locate -Q 2>/dev/null)" = "$(uname -n)" ]; then
+if $CRM_RESOURCE --resource $RESOURCE_NAME --locate 2>/dev/null | egrep -q "$(uname -n) Master"; then
 	exit 0;
 else
 	exit 1;
