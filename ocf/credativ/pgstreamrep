@@ -224,6 +224,9 @@ CRM_MASTER="${HA_SBIN_DIR}/crm_master -l reboot "
 MASTER_SCORE=1000
 SLAVE_SCORE=100
 
+ATTR_XLOG_POSITION="pgstreamrep-xlogpos"
+ATTR_ROLE="pgstreamrep-role"
+
 ##
 ## internal functions
 ##
@@ -231,6 +234,15 @@ SLAVE_SCORE=100
 # run a command as resowner user
 runasowner() {
 	( cd $OCF_RESKEY_pgdata; su $OCF_RESKEY_resowner -c "$*" )
+}
+
+# set the specified node attribute to a new value
+# $1 = VAR
+# $2 = VALUE
+#
+# in case any of the parameters are empty, this is a no-op
+_nodeattr_set() {
+    [ ! -z "$1" ] && [ ! -z "$2" ] && attrd_updater --name $1 --update $2
 }
 
 # moderate preference (adjust pacemaker score)
@@ -295,6 +307,12 @@ pgstreamrep_set_status_variables() {
 		PG_XLOG=$OUT
 	fi
 
+	## Set the role attribute and reflect which role the current
+	## actually has according to the state of the running PostgreSQL
+	## instance.
+	_nodeattr_set $ATTR_ROLE $PG_ROLE
+	_nodeattr_set $ATTR_XLOG_POSITION $PG_XLOG
+
 	return $OCF_SUCCESS
 }
 
@@ -317,6 +335,11 @@ pgstreamrep_monitor() {
     ## running, there's not much sense in going further.
     RC=$?
     if [ $RC -ne $OCF_SUCCESS ]; then
+
+	## Set the role to Unconfigured to reflect that
+	## here is nothing running atm
+	_nodeattr_set $ATTR_ROLE "Unconfigured"
+
         return $RC
     fi
 
@@ -508,7 +531,7 @@ pgstreamrep_demote() {
 
 	ocf_log error "PostgreSQL is in unknown state: $PG_ROLE"
 
-	return $OCF_ERR_GENERUC
+	return $OCF_ERR_GENERIC
 }
 
 pgstreamrep_notify() {

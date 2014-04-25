@@ -1,6 +1,6 @@
 .PHONY=dist
 FILES=ocf/credativ/pgrepmgr ocf/credativ/pgstreamrep ocf/credativ/LVMactivation
-RA_RELEASE=0.4.1
+RA_RELEASE=0.5.0
 
 dist:
 	@echo "Making dist files"
