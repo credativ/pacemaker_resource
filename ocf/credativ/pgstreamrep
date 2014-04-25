@@ -242,11 +242,12 @@ modpref() {
 # get status information of the local PostgreSQL instance
 pgstreamrep_get_status() {
 	ocf_log debug "pid file in $OCF_RESKEY_pgpidfile"
+
 	if [ ! -f $OCF_RESKEY_pgpidfile ]
 	then
-	ocf_log debug "pidfile $PIDFILE does not exist"
-		# No PID file
-		return $OCF_NOT_RUNNING
+	    ocf_log debug "pidfile $PIDFILE does not exist"
+	    # No PID file
+	    return $OCF_NOT_RUNNING
 	fi
 
 	OUTPUT=$(runasowner ${OCF_RESKEY_pgctl} -D ${OCF_RESKEY_pgdata} status)
@@ -302,16 +303,16 @@ pgstreamrep_set_status_variables() {
 ## Pacemaker API functions
 ##
 pgstreamrep_status() {
-	pgstreamrep_set_status_variables
 	pgstreamrep_get_status
+	pgstreamrep_set_status_variables
 	RC=$?
 	ocf_log info "STATUS: rc=$RC role=$PG_ROLE xlog=$PG_XLOG"
 	return $RC
 }
 
 pgstreamrep_monitor() {
-	pgstreamrep_set_status_variables
 	pgstreamrep_get_status
+	pgstreamrep_set_status_variables
 	RC=$?
 	ocf_log info "MONITOR: rc=$RC role=$PG_ROLE xlog=$PG_XLOG"
 
@@ -320,14 +321,14 @@ pgstreamrep_monitor() {
     fi
 
 	case $PG_ROLE in
-		Master) 
-            modpref -v $MASTER_SCORE
-            RC=$OCF_RUNNING_MASTER
-            ;;
-		Slave) 
-            modpref -v $SLAVE_SCORE
-            RC=$OCF_SUCCESS
-            ;;
+	    Master) 
+		modpref -v $MASTER_SCORE
+		RC=$OCF_RUNNING_MASTER
+		;;
+	    Slave) 
+		modpref -v $SLAVE_SCORE
+		RC=$OCF_SUCCESS
+		;;
 	esac
 
 	return $RC
@@ -429,8 +430,8 @@ pgstreamrep_stop() {
 
 pgstreamrep_promote() {
 	ocf_log info "PROMOTE: promoting"
-	pgstreamrep_set_status_variables
 	pgstreamrep_get_status
+	pgstreamrep_set_status_variables
 	RC=$?
 
 	if [[ $RC -ne $OCF_SUCCESS ]]; then
@@ -477,8 +478,8 @@ pgstreamrep_promote() {
 
 pgstreamrep_demote() {
 	ocf_log info "DEMOTE:"
-	pgstreamrep_set_status_variables
 	pgstreamrep_get_status
+	pgstreamrep_set_status_variables
 	RC=$?
 	if [[ $RC -ne $OCF_SUCCESS ]]; then
 		ocf_log info "PostgreSQL not running"
