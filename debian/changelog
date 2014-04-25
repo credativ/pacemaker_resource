@@ -1,6 +1,6 @@
-pgstreamrep (0.4) UNRELEASED; urgency=low
+pgstreamrep (0.4.1) UNRELEASED; urgency=low
 
-  * Update to pgstreamrep version 0.4
+  * Update to pgstreamrep 0.4.1
 
  -- Bernd Helmle <bernd.helmle@credativ.de>  Tue, 13 May 2014 13:45:00 +0200
 

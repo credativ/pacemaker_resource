@@ -311,10 +311,18 @@ pgstreamrep_status() {
 }
 
 pgstreamrep_monitor() {
-	pgstreamrep_get_status
-	pgstreamrep_set_status_variables
-	RC=$?
-	ocf_log info "MONITOR: rc=$RC role=$PG_ROLE xlog=$PG_XLOG"
+    pgstreamrep_get_status
+
+    ## if we came to the result that the instance isn't
+    ## running, there's not much sense in going further.
+    RC=$?
+    if [ $RC -ne $OCF_SUCCESS ]; then
+        return $RC
+    fi
+
+    pgstreamrep_set_status_variables
+    RC=$?
+    ocf_log info "MONITOR: rc=$RC role=$PG_ROLE xlog=$PG_XLOG"
 
     if [ $RC -ne 0 ]; then
         return $OCF_ERR_GENERIC
