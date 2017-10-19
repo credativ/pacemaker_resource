@@ -438,7 +438,7 @@ pgstreamrep_start() {
 }
 
 pgstreamrep_stop() {
-	ocf_log info "STOP: stopping PostgresQL instance"
+	ocf_log info "STOP: stopping PostgreSQL instance"
 	pgstreamrep_get_status
 	RC=$?
 
